@@ -82,10 +82,10 @@ const RoyaltyEditModal = ({ asinData, isOpen, onClose, onRoyaltyUpdate }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-lg bg-slate-900 border-slate-700 text-white">
+      <DialogContent className="max-w-[94vw] sm:max-w-lg max-h-[85vh] overflow-y-auto bg-slate-900 border-slate-700 text-white p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle>Modifica Royalty per "{asinData.title}"</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="text-base sm:text-lg">Modifica Royalty per "{asinData.title}"</DialogTitle>
+          <DialogDescription className="text-xs sm:text-sm">
             Inserisci le royalty per calcolare i guadagni stimati basati sul BSR attuale.
           </DialogDescription>
         </DialogHeader>
@@ -100,8 +100,8 @@ const RoyaltyEditModal = ({ asinData, isOpen, onClose, onRoyaltyUpdate }) => {
           </div>
 
           {mode === 'manual' ? (
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="royalty" className="text-right">
+            <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-3 sm:gap-4">
+              <Label htmlFor="royalty" className="text-left sm:text-right text-sm">
                 Royalty ($)
               </Label>
               <Input
@@ -109,14 +109,14 @@ const RoyaltyEditModal = ({ asinData, isOpen, onClose, onRoyaltyUpdate }) => {
                 type="text"
                 value={royalty}
                 onChange={(e) => setRoyalty(e.target.value)}
-                className="col-span-3 bg-slate-800 border-slate-600 focus:ring-purple-500"
+                className="sm:col-span-3 bg-slate-800 border-slate-600 focus:ring-purple-500 h-9 text-sm"
                 placeholder="Es. 2,45"
               />
             </div>
           ) : (
             <div className="bg-slate-800/60 border border-white/10 rounded-lg p-3 text-sm">
               <div className="flex items-center gap-2 text-emerald-300 mb-2"><Info className="w-4 h-4"/> Royalty rilevata automaticamente</div>
-              <div className="grid grid-cols-2 gap-2 text-slate-200">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-slate-200">
                 <div>
                   <p className="text-slate-400 text-xs">Prezzo (lordo)</p>
                   <p>${autoInfo.price.toFixed(2)}</p>
@@ -154,13 +154,13 @@ const RoyaltyEditModal = ({ asinData, isOpen, onClose, onRoyaltyUpdate }) => {
             </div>
           )}
 
-          <div className="bg-slate-800/50 p-4 rounded-lg border border-white/10 space-y-4">
-              <h4 className="text-md font-semibold text-white flex items-center gap-2"><Info className="w-5 h-5 text-cyan-400" /> Stima Guadagni</h4>
-              <p className="text-sm text-gray-400">
+          <div className="bg-slate-800/50 p-3 sm:p-4 rounded-lg border border-white/10 space-y-3 sm:space-y-4">
+              <h4 className="text-sm sm:text-md font-semibold text-white flex items-center gap-2"><Info className="w-5 h-5 text-cyan-400" /> Stima Guadagni</h4>
+              <p className="text-xs sm:text-sm text-gray-400">
                   Questa stima si basa sul BSR attuale di <strong className="text-purple-400">{asinData.bsr?.toLocaleString('it-IT') || 'N/D'}</strong>.
               </p>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-sm">
                   <div className="bg-white/5 p-3 rounded-md">
                       <p className="flex items-center gap-2 text-gray-400"><TrendingUp className="w-4 h-4"/> Vendite Stimate</p>
                       <p className="text-white font-semibold">Giorno: {formatRange(sales.daily)}</p>
@@ -178,9 +178,9 @@ const RoyaltyEditModal = ({ asinData, isOpen, onClose, onRoyaltyUpdate }) => {
               </p>
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} className="text-white border-slate-600 hover:bg-slate-800">Annulla</Button>
-          <Button onClick={handleSave} disabled={isSaving} className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
+        <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-0">
+          <Button variant="outline" onClick={onClose} className="w-full sm:w-auto h-9 text-sm text-white border-slate-600 hover:bg-slate-800">Annulla</Button>
+          <Button onClick={handleSave} disabled={isSaving} className="w-full sm:w-auto h-9 text-sm bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Salva Royalty
           </Button>

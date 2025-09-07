@@ -139,7 +139,9 @@ const AsinMonitoring = () => {
 
   
   const { trends, refreshTrends } = useAsinTrends(trackedAsins);
-  const channelRef = useRef(null); // ← add this
+  const channelRef = useRef(null); // current realtime channel
+  const refreshTrendsRef = useRef(refreshTrends);
+  const fetchTrackedAsinsRef = useRef(null);
 
   const fetchTrackedAsins = useCallback(async () => {
     if (!user) return;
@@ -157,11 +159,15 @@ const AsinMonitoring = () => {
     setIsLoading(false);
   }, [user]);
 
+  // Keep refs updated after functions are defined
+  useEffect(() => { refreshTrendsRef.current = refreshTrends; }, [refreshTrends]);
+  useEffect(() => { fetchTrackedAsinsRef.current = fetchTrackedAsins; }, [fetchTrackedAsins]);
+
 useEffect(() => {
   if (!user) return;
 
   // First load
-  fetchTrackedAsins();
+  fetchTrackedAsinsRef.current?.();
 
   // Ensure no old subscription stays around
   if (channelRef.current) {
@@ -196,7 +202,7 @@ useEffect(() => {
       }
 
       // refresh charts whenever a row changes
-      refreshTrends();
+      refreshTrendsRef.current?.();
     }
   );
 
@@ -206,7 +212,7 @@ useEffect(() => {
     { event: 'INSERT', schema: 'public', table: 'asin_history' },
     (payload) => {
       if (payload.new?.user_id !== user.id) return;
-      refreshTrends();
+      refreshTrendsRef.current?.();
     }
   );
 
@@ -243,7 +249,7 @@ useEffect(() => {
     if (channelRef.current) supabase.removeChannel(channelRef.current);
     channelRef.current = null;
   };
-}, [user?.id, fetchTrackedAsins, refreshTrends]);
+}, [user?.id]);
 
 // Removed periodic polling to keep the layout steady; rely on realtime updates and manual refresh
 

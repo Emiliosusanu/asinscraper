@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import GlobalNotificationsBell from '@/components/GlobalNotificationsBell';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -35,6 +36,9 @@ const NotificationPet = () => {
     try { return localStorage.getItem('globalNotificationsAckFp') || ''; } catch (_) { return ''; }
   });
   // Removed greeting animations for a solid, non-flashing UI
+  
+  const [isDancing, setIsDancing] = React.useState(false);
+  const danceTimerRef = React.useRef(null);
 
   const counts = payload?.counts || { better: 0, worse: 0, stable: 0 };
   const sentiment = React.useMemo(() => {
@@ -101,6 +105,24 @@ const NotificationPet = () => {
     'Le piccole azioni quotidiane costruiscono grandi risultati.',
     'Continua a scrivere: il successo ama la disciplina.',
   ], []);
+
+  // Dance controller and animation mode
+  const animation = React.useMemo(() => {
+    if (isPayoutDay) return 'petDance 1.8s ease-in-out infinite';
+    if (isDancing) return 'petDance 1.2s ease-in-out 2';
+    return 'petBreathe 8s ease-in-out infinite';
+  }, [isPayoutDay, isDancing]);
+
+  const handleDanceTrigger = () => {
+    if (isPayoutDay) return; // already dancing all day
+    setIsDancing(true);
+    if (danceTimerRef.current) clearTimeout(danceTimerRef.current);
+    danceTimerRef.current = setTimeout(() => setIsDancing(false), 2400);
+  };
+
+  React.useEffect(() => {
+    return () => { if (danceTimerRef.current) clearTimeout(danceTimerRef.current); };
+  }, []);
 
   // Month-to-date (MTD) talking mode
   const curKey = `${y}-${pad2(m+1)}`;
@@ -288,30 +310,54 @@ const NotificationPet = () => {
         @keyframes petBreathe { 0% { transform: translateY(0) rotate(0deg);} 50% { transform: translateY(-1px) rotate(0.4deg);} 100% { transform: translateY(0) rotate(0deg);} }
         @media (prefers-reduced-motion: reduce) { .pet-anim { animation: none !important; } }
       `}</style>
-      <div className={`relative pet-anim ${isPayoutDay ? '[animation:petDance_1.8s_ease-in-out_infinite]' : '[animation:petBreathe_8s_ease-in-out_infinite]'} transform-gpu`} style={{ willChange: 'transform' }}>
+      <div
+        className="relative pet-anim transform-gpu cursor-pointer"
+        style={{ willChange: 'transform', animation }}
+        onClick={handleDanceTrigger}
+        title="Click me to dance!"
+      >
         <GlobalNotificationsBell />
-        {isPayoutDay ? (
-          <div className="absolute -top-3 right-14 w-72 bg-slate-900 text-slate-100 border border-slate-700 rounded-xl p-3 shadow-xl">
-            <p className="text-xs text-slate-300">Giorno di pagamento Amazon</p>
-            <p className="text-sm font-semibold mt-1">{`Mese pagato: ${target.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}`}</p>
-            <p className="text-sm mt-1">Totale: <span className="text-emerald-400 font-bold">{payoutTotal != null ? fmtEUR(payoutTotal) : '—'}</span></p>
-            <p className="text-xs text-slate-300 mt-2 italic">“{quotes[quoteIdx]}”</p>
-          </div>
-        ) : (showBubble && mtdEUR != null) ? (
-          <div className="absolute -top-3 right-14 w-72 bg-slate-900 text-slate-100 border border-slate-700 rounded-xl p-3 shadow-xl">
-            <p className="text-xs text-slate-300">Progresso del mese</p>
-            <p className="text-sm mt-1">Fino ad oggi: <span className="text-emerald-400 font-bold">{mtdEUR != null ? fmtEUR(mtdEUR) : '—'}</span></p>
-            {(() => {
-              const pct = mtdEUR != null ? Math.min(100, Math.round((mtdEUR / GOAL) * 100)) : null;
-              const msgTemplate = talkPool[quoteIdx % talkPool.length] || '';
-              const msg = msgTemplate
-                .replace('{mtd}', mtdEUR != null ? fmtEUR(mtdEUR) : '—')
-                .replace('{goal}', fmtEUR(GOAL))
-                .replace('{pct}', pct != null ? String(pct) : '—');
-              return <p className="text-xs text-slate-300 mt-2 italic">“{msg}”</p>;
-            })()}
-          </div>
-        ) : null}
+        <AnimatePresence>
+          {isPayoutDay && (
+            <motion.div
+              key="payout-bubble"
+              initial={{ opacity: 0, y: 6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.98 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 22, mass: 0.4 }}
+              className="absolute -top-3 right-14 w-72 bg-slate-900 text-slate-100 border border-slate-700 rounded-xl p-3 shadow-xl"
+              aria-live="polite"
+            >
+              <p className="text-xs text-slate-300">Giorno di pagamento Amazon</p>
+              <p className="text-sm font-semibold mt-1">{`Mese pagato: ${target.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}`}</p>
+              <p className="text-sm mt-1">Totale: <span className="text-emerald-400 font-bold">{payoutTotal != null ? fmtEUR(payoutTotal) : '—'}</span></p>
+              <p className="text-xs text-slate-300 mt-2 italic">“{quotes[quoteIdx]}”</p>
+            </motion.div>
+          )}
+          {!isPayoutDay && showBubble && mtdEUR != null && (
+            <motion.div
+              key="mtd-bubble"
+              initial={{ opacity: 0, y: 6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.98 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 22, mass: 0.4 }}
+              className="absolute -top-3 right-14 w-72 bg-slate-900 text-slate-100 border border-slate-700 rounded-xl p-3 shadow-xl"
+              aria-live="polite"
+            >
+              <p className="text-xs text-slate-300">Progresso del mese</p>
+              <p className="text-sm mt-1">Fino ad oggi: <span className="text-emerald-400 font-bold">{mtdEUR != null ? fmtEUR(mtdEUR) : '—'}</span></p>
+              {(() => {
+                const pct = mtdEUR != null ? Math.min(100, Math.round((mtdEUR / GOAL) * 100)) : null;
+                const msgTemplate = talkPool[quoteIdx % talkPool.length] || '';
+                const msg = msgTemplate
+                  .replace('{mtd}', mtdEUR != null ? fmtEUR(mtdEUR) : '—')
+                  .replace('{goal}', fmtEUR(GOAL))
+                  .replace('{pct}', pct != null ? String(pct) : '—');
+                return <p className="text-xs text-slate-300 mt-2 italic">“{msg}”</p>;
+              })()}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
