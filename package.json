@@ -5,8 +5,11 @@
   "private": true,
   "scripts": {
     "dev": "vite",
+    "prebuild": "node ./tools/conflict-guard.js check",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:conflicts": "node ./tools/conflict-guard.js check",
+    "fix:conflicts": "node ./tools/conflict-guard.js fix"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.0.5",
