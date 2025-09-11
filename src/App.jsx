@@ -10,6 +10,7 @@ import { Loader2 } from 'lucide-react';
 import PortfolioAnalysis from '@/pages/PortfolioAnalysis';
 import AnalysisTools from '@/pages/AnalysisTools';
 import MobileNav from '@/components/layout/MobileNav';
+import { SmartNotificationsProvider, SmartNotificationsDrawer, SmartNotificationsFab } from '@/components/SmartNotificationsDrawer';
 
 // Emilio: Main App component, handles routing.
 function App() {
@@ -24,7 +25,7 @@ function App() {
   }
 
   return (
-    <>
+    <SmartNotificationsProvider>
       <Routes>
         <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
         <Route 
@@ -48,7 +49,10 @@ function App() {
       </Routes>
       {user && <MobileNav />}
       <Toaster />
-    </>
+      {/* Feature flag controlled drawer and FAB */}
+      <SmartNotificationsDrawer />
+      <SmartNotificationsFab />
+    </SmartNotificationsProvider>
   );
 }
 

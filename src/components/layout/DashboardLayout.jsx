@@ -2,6 +2,7 @@ import React from 'react';
 import Sidebar from '@/components/layout/Sidebar';
 import MobileNav from '@/components/layout/MobileNav';
 import NotificationPet from '@/components/NotificationPet';
+import WelcomeChangelogModal from '@/components/WelcomeChangelogModal';
 
 const DashboardLayout = ({ children }) => {
   return (
@@ -15,6 +16,8 @@ const DashboardLayout = ({ children }) => {
       <MobileNav />
       {/* Minimal floating notifications pet */}
       <NotificationPet />
+      {/* First-login welcome & changelog modal (shows max 2 times per user) */}
+      <WelcomeChangelogModal />
     </div>
   );
 };

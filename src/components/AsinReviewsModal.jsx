@@ -26,29 +26,119 @@ const AsinReviewsModal = ({ asinData, onClose }) => {
     const fetchReviews = async () => {
       setLoading(true);
       try {
-        const { data: settingsData, error: settingsError } = await supabase
-          .from('settings')
-          .select('scraperapi_key')
-          .eq('user_id', user.id)
-          .single();
+        const now = new Date();
+        const nowIso = now.toISOString();
+        const userId = user?.id;
+        if (!userId) throw new Error('Utente non autenticato');
 
-        if (settingsError || !settingsData?.scraperapi_key) {
-          throw new Error('Chiave ScraperAPI non trovata.');
+        // Load available ScraperAPI keys for this user
+        const { data: keys, error: keysErr } = await supabase
+          .from('scraper_api_keys')
+          .select('id, api_key, status, credits, max_credits, cost_per_call, created_at, last_reset_at, success_count, failure_count')
+          .eq('user_id', userId)
+          .eq('service_name', 'scraperapi')
+          .order('credits', { ascending: false });
+        if (keysErr) throw keysErr;
+
+        // Helper: reset if 30d passed since last reset or creation
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        const isDueReset = (row) => {
+          const last = row.last_reset_at ? new Date(row.last_reset_at) : (row.created_at ? new Date(row.created_at) : null);
+          if (!last) return false;
+          return (now.getTime() - last.getTime()) >= (30 * DAY_MS);
+        };
+
+        const candidates = Array.isArray(keys) ? keys.slice() : [];
+
+        // Try each key in order (preferring those with credits and active status)
+        for (const k of candidates) {
+          const cost = Number.isFinite(k?.cost_per_call) ? Math.max(1, Number(k.cost_per_call)) : 5;
+          const hasCredits = Number.isFinite(k?.credits) ? (k.credits >= cost) : false;
+          const active = (k?.status || '').toLowerCase() === 'active';
+
+          // Auto-reset if due and credits aren't already full
+          if (isDueReset(k) && Number.isFinite(k.max_credits) && k.credits < k.max_credits) {
+            try {
+              await supabase.from('scraper_api_keys').update({ credits: k.max_credits, last_reset_at: nowIso }).eq('id', k.id);
+              k.credits = k.max_credits;
+              k.last_reset_at = nowIso;
+            } catch (_) {}
+          }
+
+          if (!active || !hasCredits) continue;
+
+          // Attempt with this key
+          try {
+            const { data, error } = await supabase.functions.invoke('scrape-amazon-reviews', {
+              body: JSON.stringify({ asin: asinData.asin, apiKey: k.api_key }),
+            });
+            if (error) throw error;
+
+            // On success: decrement credits, increment success_count, set last_used_at, log
+            await supabase.from('scraper_api_keys')
+              .update({ 
+                credits: Math.max(0, (k.credits || cost) - cost), 
+                success_count: (k.success_count || 0) + 1,
+                last_used_at: nowIso,
+              })
+              .eq('id', k.id);
+
+            await supabase.from('scraper_api_logs').insert({
+              api_key_id: k.id,
+              asin: asinData.asin,
+              country: asinData.country || null,
+              status: 'success',
+              cost,
+            });
+
+            setReviews(data?.reviews || []);
+            setLoading(false);
+            return; // done
+          } catch (err) {
+            // Mark failure: do not decrement credits on generic errors to avoid false exhaustion
+            try {
+              // Heuristic: only mark exhausted if clear quota/credit error
+              const msg = String(err?.message || '').toLowerCase();
+              const quotaLike = msg.includes('quota') || msg.includes('credit') || msg.includes('exhaust') || msg.includes('limit');
+              const nextCredits = k.credits; // unchanged on failure
+              const nextStatus = quotaLike && Number.isFinite(k.credits) && k.credits <= 0 ? 'exhausted' : k.status;
+              await supabase.from('scraper_api_keys')
+                .update({ credits: nextCredits, failure_count: (k.failure_count || 0) + 1, status: nextStatus, last_used_at: nowIso })
+                .eq('id', k.id);
+              await supabase.from('scraper_api_logs').insert({
+                api_key_id: k.id,
+                asin: asinData.asin,
+                country: asinData.country || null,
+                status: 'failure',
+                cost: 0,
+                error_message: String(err?.message || err),
+              });
+            } catch (_) {}
+            // try next key
+          }
         }
 
-        const { data, error } = await supabase.functions.invoke('scrape-amazon-reviews', {
-          body: JSON.stringify({ asin: asinData.asin, apiKey: settingsData.scraperapi_key }),
-        });
+        // Fallback: settings.scraperapi_key
+        const { data: settingsData } = await supabase
+          .from('settings')
+          .select('scraperapi_key')
+          .eq('user_id', userId)
+          .single();
+        const fallbackKey = settingsData?.scraperapi_key;
+        if (fallbackKey) {
+          const { data, error } = await supabase.functions.invoke('scrape-amazon-reviews', {
+            body: JSON.stringify({ asin: asinData.asin, apiKey: fallbackKey }),
+          });
+          if (!error) {
+            setReviews(data?.reviews || []);
+            setLoading(false);
+            return;
+          }
+        }
 
-        if (error) throw error;
-        setReviews(data.reviews);
-
+        throw new Error('Nessuna chiave disponibile o tutte le richieste sono fallite.');
       } catch (error) {
-        toast({
-          title: 'Errore nel caricare le recensioni',
-          description: error.message,
-          variant: 'destructive',
-        });
+        toast({ title: 'Errore nel caricare le recensioni', description: error.message, variant: 'destructive' });
       } finally {
         setLoading(false);
       }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GlobalNotificationsBell from '@/components/GlobalNotificationsBell';
+import { HelpCircle } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
@@ -148,7 +149,28 @@ const NotificationPet = () => {
     'Non mollare: {mtd} è un checkpoint, non il traguardo.',
     'Focalizzati: {mtd} MTD. Prossimo milestone: {goal}.',
     'Strategia > fortuna. {mtd} oggi, rotta su {goal}.',
-    'Siamo in corsa. {mtd} MTD: spingi per {goal}!' 
+    'Siamo in corsa. {mtd} MTD: spingi per {goal}!',
+    // Extra 20 motivational entries
+    'Scrivi oggi per vendere domani. {mtd} → {goal}.',
+    'Ogni pagina scritta è un passo verso {goal}.',
+    'Routine > ispirazione. {mtd} finora.',
+    'Piccoli progressi quotidiani battono grandi balzi sporadici. {mtd}.',
+    'Cura la copertina, cura il CTR. Risultato: {mtd}.',
+    'Se non misuri, non migliori. Oggi: {mtd}, obiettivo: {goal}.',
+    'La costanza costruisce cataloghi: {mtd} questo mese.',
+    'Credi nei dati: {pct}% del traguardo già centrato.',
+    'Pazienza e disciplina: {mtd} → {goal}.',
+    'I bestseller nascono dalle abitudini. {mtd} oggi.',
+    'Itera velocemente: test, misura, ottimizza.',
+    'Meno perfezione, più pubblicazione. {mtd}.',
+    'La prossima recensione è a un capitolo di distanza.',
+    'Sblocca momentum: una pubblicazione, un’ottimizzazione, ogni giorno.',
+    'Sei in controllo: prezzo, pagina, parole chiave.',
+    'Quando è difficile, stai crescendo. {mtd} → {goal}.',
+    'La qualità segue la quantità allenata. Continua.',
+    'Obiettivo chiaro, azione semplice, ripetuta.',
+    'Oggi semini, domani incassi. {mtd} → {goal}.',
+    'Passo costante > sprint sporadici. Avanti!'
   ], []);
 
   const loadMtdEUR = React.useCallback(async () => {
@@ -317,6 +339,21 @@ const NotificationPet = () => {
         title="Click me to dance!"
       >
         <GlobalNotificationsBell />
+        {/* Mini help action to open tutorial/changelog */}
+        <button
+          type="button"
+          aria-label="Apri tutorial"
+          onClick={(e) => {
+            e.stopPropagation();
+            try { window.dispatchEvent(new CustomEvent('openWelcomeModal', { detail: { suppressCount: true } })); }
+            catch (_) { window.dispatchEvent(new Event('openWelcomeModal')); }
+          }}
+          className="absolute inline-flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-indigo-600 to-fuchsia-600 text-white shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-white/30
+                     left-1/2 -translate-x-1/2 -bottom-3 sm:translate-x-0 sm:-left-2 sm:-bottom-2"
+          title="Apri tutorial e novità"
+        >
+          <HelpCircle className="w-5 h-5" />
+        </button>
         <AnimatePresence>
           {isPayoutDay && (
             <motion.div

@@ -67,8 +67,11 @@ const GlobalNotificationsBell = () => {
   const [expanded, setExpanded] = React.useState({});
 
   // --- Smart summary & insights ---
-  const sumPct = (arr) => arr.reduce((acc, d) => acc + (Number.isFinite(d.pct) ? d.pct : 0), 0);
+  // Clamp extreme percentages for display purposes
+  const clampPct = (v) => Math.max(-300, Math.min(300, v));
+  const sumPct = (arr) => arr.reduce((acc, d) => acc + (Number.isFinite(d.pct) ? clampPct(d.pct) : 0), 0);
   const netDelta = sumPct(better) - Math.abs(sumPct(worse));
+  const netDeltaDisplay = clampPct(netDelta);
   const sentimentLabel = netDelta > 0 ? 'Trend positivo' : netDelta < 0 ? 'Trend negativo' : 'Trend stabile';
   const updatedAt = payload?.ts ? new Date(payload.ts) : null;
   const timeAgo = (() => {
@@ -165,7 +168,7 @@ const GlobalNotificationsBell = () => {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
               <p className="text-[11px] text-gray-400">Net Impact</p>
-              <p className={`text-sm font-semibold ${netDelta >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{netDelta.toFixed(1)}%</p>
+              <p className={`text-sm font-semibold ${netDeltaDisplay >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{netDeltaDisplay.toFixed(1)}%</p>
             </div>
             <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
               <p className="text-[11px] text-gray-400">Sentiment</p>
@@ -220,7 +223,9 @@ const GlobalNotificationsBell = () => {
                 <div key={`b-${d.id || i}`} className="mb-2 last:mb-0">
                   <div className="flex items-center justify-between gap-2">
                     <div className="truncate text-sm text-gray-200" title={d.title || d.asin}>{d.title || d.asin}</div>
-                    <div className="text-emerald-300 text-sm font-semibold">+{Math.abs(d.pct).toFixed(1)}%</div>
+                    <div className="text-emerald-300 text-sm font-semibold">
+                      {d?.kind === 'new' ? 'Nuovo' : Number.isFinite(d?.pct) ? `+${Math.abs(clampPct(d.pct)).toFixed(1)}%` : '—'}
+                    </div>
                   </div>
                   {Array.isArray(d.drivers) && d.drivers.length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
@@ -275,7 +280,9 @@ const GlobalNotificationsBell = () => {
                 <div key={`w-${d.id || i}`} className="mb-2 last:mb-0">
                   <div className="flex items-center justify-between gap-2">
                     <div className="truncate text-sm text-gray-200" title={d.title || d.asin}>{d.title || d.asin}</div>
-                    <div className="text-red-300 text-sm font-semibold">-{Math.abs(d.pct).toFixed(1)}%</div>
+                    <div className="text-red-300 text-sm font-semibold">
+                      {d?.kind === 'lost' ? 'Perso' : Number.isFinite(d?.pct) ? `-${Math.abs(clampPct(d.pct)).toFixed(1)}%` : '—'}
+                    </div>
                   </div>
                   {Array.isArray(d.drivers) && d.drivers.length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">

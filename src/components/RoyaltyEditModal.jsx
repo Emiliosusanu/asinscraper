@@ -20,14 +20,115 @@ const RoyaltyEditModal = ({ asinData, isOpen, onClose, onRoyaltyUpdate }) => {
   const [royalty, setRoyalty] = useState('');
   const [mode, setMode] = useState('auto'); // 'auto' | 'manual'
   const [isSaving, setIsSaving] = useState(false);
+  // New attributes for accurate royalty: interior, pages, dimensions
+  const [interiorType, setInteriorType] = useState('bw'); // 'bw' | 'color' | 'premium'
+  const [pageCount, setPageCount] = useState('');
+  const [dimensionsRaw, setDimensionsRaw] = useState('');
+  const [trimSize, setTrimSize] = useState('');
 
   useEffect(() => {
     if (asinData) {
       const hasManual = typeof asinData.royalty === 'number' && asinData.royalty > 0;
       setMode(hasManual ? 'manual' : 'auto');
       setRoyalty(hasManual ? asinData.royalty : '');
+      setInteriorType(asinData?.interior_type || 'bw');
+      setPageCount(Number.isFinite(asinData?.page_count) ? String(asinData.page_count) : '');
+      setDimensionsRaw(asinData?.dimensions_raw || '');
+      setTrimSize(asinData?.trim_size || '');
     }
   }, [asinData]);
+
+  // Helpers
+  const parseTrimSize = (raw) => {
+    if (!raw) return '';
+    try {
+      const s = String(raw).toLowerCase();
+      // Try inches pattern: e.g., "8.5 x 11 in" or "8.5 x 11 inches"
+      let m = s.match(/(\d{1,2}(?:[.,]\d+)?)\s*[x×]\s*(\d{1,2}(?:[.,]\d+)?)\s*(?:in|inch|inches)/i);
+      if (m) {
+        const w = parseFloat(m[1].replace(',', '.'));
+        const h = parseFloat(m[2].replace(',', '.'));
+        return normalizeTrim(w, h, 'in');
+      }
+      // Try cm pattern: e.g., "15.24 x 22.86 cm"
+      m = s.match(/(\d{1,2}(?:[.,]\d+)?)\s*[x×]\s*(\d{1,2}(?:[.,]\d+)?)\s*cm/i);
+      if (m) {
+        const wc = parseFloat(m[1].replace(',', '.'));
+        const hc = parseFloat(m[2].replace(',', '.'));
+        // Convert to inches
+        const w = wc / 2.54;
+        const h = hc / 2.54;
+        return normalizeTrim(w, h, 'in');
+      }
+    } catch (_) {}
+    return '';
+  };
+
+  const handleSaveWithAttributes = async () => {
+    if (!asinData) return;
+    setIsSaving(true);
+    try {
+      const royaltyValue = parseFloat(royalty.toString().replace(',', '.'));
+      const payload = {
+        royalty: mode === 'auto' ? null : (Number.isFinite(royaltyValue) ? royaltyValue : null),
+        interior_type: interiorType || null,
+        page_count: Number.isFinite(Number(pageCount)) ? Number(pageCount) : null,
+        dimensions_raw: dimensionsRaw || null,
+        trim_size: trimSize || (dimensionsRaw ? parseTrimSize(dimensionsRaw) : null),
+      };
+      const { data, error } = await supabase
+        .from('asin_data')
+        .update(payload)
+        .eq('id', asinData.id)
+        .select()
+        .single();
+      if (error) throw error;
+      toast({ title: 'Salvato!', description: 'Dettagli libro e royalty aggiornati.' });
+      onRoyaltyUpdate?.(data);
+      onClose();
+    } catch (e) {
+      const msg = String(e?.message || e);
+      // Fallback: if columns don't exist yet, try legacy save
+      if (/column .* does not exist/i.test(msg)) {
+        await handleSave();
+        toast({ title: 'Schema non aggiornato', description: 'Alcuni attributi non sono stati salvati. Applica la migrazione in supabase/migrations per abilitarli.', variant: 'destructive' });
+      } else {
+        toast({ title: 'Errore di salvataggio', description: msg, variant: 'destructive' });
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const normalizeTrim = (wIn, hIn) => {
+    const std = [
+      { w: 6.0, h: 9.0, label: '6 × 9 in' },
+      { w: 8.5, h: 11.0, label: '8.5 × 11 in' },
+      { w: 8.0, h: 10.0, label: '8 × 10 in' },
+      { w: 5.0, h: 8.0, label: '5 × 8 in' },
+      { w: 5.5, h: 8.5, label: '5.5 × 8.5 in' },
+      { w: 7.5, h: 9.25, label: '7.5 × 9.25 in' },
+    ];
+    const tol = 0.12; // ~3mm tolerance
+    for (const s of std) {
+      if (Math.abs(wIn - s.w) <= tol && Math.abs(hIn - s.h) <= tol) return s.label;
+      if (Math.abs(wIn - s.h) <= tol && Math.abs(hIn - s.w) <= tol) return `${s.label}`; // swapped
+    }
+    return `${wIn.toFixed(2)} × ${hIn.toFixed(2)} in`;
+  };
+
+  const detectInterior = () => {
+    // Simple heuristic: keywords in title and price/page ratio thresholds
+    const title = (asinData?.title || '').toLowerCase();
+    const price = Number(asinData?.price) || 0;
+    const pages = Number(pageCount) || 0;
+    const ratio = pages > 0 ? price / pages : 0;
+    const kwColor = /(full\s*color|a\s*colori|colou?r(\b|\s)|illustrated|photo\s*book)/i.test(title);
+    // Very rough thresholds; user can override
+    if (kwColor || ratio >= 0.18) return setInteriorType('premium');
+    if (ratio >= 0.10) return setInteriorType('color');
+    return setInteriorType('bw');
+  };
 
   const handleSave = async () => {
     if (!asinData) return;
@@ -73,7 +174,12 @@ const RoyaltyEditModal = ({ asinData, isOpen, onClose, onRoyaltyUpdate }) => {
 
   const sales = calculateSalesFromBsr(asinData.bsr);
   const royaltyValue = parseFloat(royalty.toString().replace(',', '.')) || 0;
-  const autoInfo = explainRoyalty(asinData);
+  // Use local overrides for preview
+  const autoInfo = explainRoyalty({
+    ...asinData,
+    page_count: Number(pageCount) || asinData?.page_count,
+    interior_type: interiorType || asinData?.interior_type || 'bw',
+  });
   const effectiveRoyalty = mode === 'auto' ? autoInfo.netRoyalty : royaltyValue;
   const income = calculateIncome(sales, effectiveRoyalty);
 
@@ -90,6 +196,31 @@ const RoyaltyEditModal = ({ asinData, isOpen, onClose, onRoyaltyUpdate }) => {
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-6 py-4">
+          {/* New: Book attributes used in printing costs */}
+          <div className="bg-slate-800/50 p-3 sm:p-4 rounded-lg border border-white/10 space-y-3">
+            <h4 className="text-sm sm:text-md font-semibold text-white">Dettagli libro</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <Label className="text-xs text-gray-400">Tipo interno</Label>
+                <div className="flex gap-1 mt-1">
+                  <button type="button" onClick={()=>setInteriorType('bw')} className={`px-2 py-1 rounded border text-xs ${interiorType==='bw'?'border-emerald-400 text-white':'border-white/10 text-gray-300'}`}>B/N</button>
+                  <button type="button" onClick={()=>setInteriorType('color')} className={`px-2 py-1 rounded border text-xs ${interiorType==='color'?'border-emerald-400 text-white':'border-white/10 text-gray-300'}`}>Colore</button>
+                  <button type="button" onClick={()=>setInteriorType('premium')} className={`px-2 py-1 rounded border text-xs ${interiorType==='premium'?'border-emerald-400 text-white':'border-white/10 text-gray-300'}`}>Premium</button>
+                  <button type="button" onClick={detectInterior} className="ml-auto px-2 py-1 rounded border border-white/10 text-xs text-gray-200">Rileva</button>
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="pageCount" className="text-xs text-gray-400">Pagine</Label>
+                <Input id="pageCount" type="number" min="24" max="828" value={pageCount} onChange={(e)=> setPageCount(e.target.value)} className="bg-slate-800 border-slate-600 h-9 text-sm mt-1" placeholder="Es. 120" />
+              </div>
+              <div>
+                <Label htmlFor="dimensions" className="text-xs text-gray-400">Dimensioni (come su Amazon)</Label>
+                <Input id="dimensions" type="text" value={dimensionsRaw} onChange={(e)=> { setDimensionsRaw(e.target.value); setTrimSize(parseTrimSize(e.target.value)); }} className="bg-slate-800 border-slate-600 h-9 text-sm mt-1" placeholder="Es. 6 x 9 inches / 15.24 x 22.86 cm" />
+                {trimSize && <p className="text-[11px] text-gray-400 mt-1">Formato: <span className="text-gray-200">{trimSize}</span></p>}
+              </div>
+            </div>
+            <p className="text-[11px] text-gray-500">Questi dettagli migliorano l'accuratezza del costo stampa. Il calcolo usa <span className="text-gray-300">{interiorType.toUpperCase()}</span> e {Number(pageCount)||asinData?.page_count||'—'} pagine.</p>
+          </div>
           {/* Mode selector */}
           <div className="flex items-center gap-3">
             <Label className="text-sm">Modalità</Label>
@@ -146,6 +277,10 @@ const RoyaltyEditModal = ({ asinData, isOpen, onClose, onRoyaltyUpdate }) => {
                   <p>${autoInfo.print.total.toFixed(2)}</p>
                 </div>
                 <div>
+                  <p className="text-slate-400 text-xs">Interno usato</p>
+                  <p className="uppercase">{autoInfo.interior}</p>
+                </div>
+                <div>
                   <p className="text-slate-400 text-xs">Royalty stimata per copia</p>
                   <p className="text-emerald-300 font-semibold">${autoInfo.netRoyalty.toFixed(2)}</p>
                 </div>
@@ -180,7 +315,10 @@ const RoyaltyEditModal = ({ asinData, isOpen, onClose, onRoyaltyUpdate }) => {
         </div>
         <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-0">
           <Button variant="outline" onClick={onClose} className="w-full sm:w-auto h-9 text-sm text-white border-slate-600 hover:bg-slate-800">Annulla</Button>
-          <Button onClick={handleSave} disabled={isSaving} className="w-full sm:w-auto h-9 text-sm bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
+          <Button onClick={async () => {
+            // Persist new attributes together with royalty mode
+            await handleSaveWithAttributes();
+          }} disabled={isSaving} className="w-full sm:w-auto h-9 text-sm bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Salva Royalty
           </Button>

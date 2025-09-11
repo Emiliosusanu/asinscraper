@@ -182,18 +182,25 @@ const useAsinTrends = (asins) => {
       const coverageDays2 = uniqueDates(period2).length;
       const confidence = coverageDays2 >= 14 && period2.length >= 8 ? 'high' : (coverageDays2 >= 7 && period2.length >= 4 ? 'medium' : 'low');
       let moGuard = 'stable';
-      let moDeltaPct = 0;
+      let moDeltaPct = null; // percent only when both periods > 0
+      let moKind = 'flat';   // 'ratio' | 'new' | 'lost' | 'flat'
       if (m1 > 0 && m2 > 0) {
         moDeltaPct = ((m2 - m1) / m1) * 100;
+        moKind = 'ratio';
         if (moDeltaPct >= 5) moGuard = 'better';
         else if (moDeltaPct <= -5) moGuard = 'worse';
         else moGuard = 'stable';
       } else if (m2 > 0 && m1 === 0) {
         moGuard = 'better';
-        moDeltaPct = 100;
+        moKind = 'new';
+        moDeltaPct = null;
       } else if (m1 > 0 && m2 === 0) {
         moGuard = 'worse';
-        moDeltaPct = -100;
+        moKind = 'lost';
+        moDeltaPct = null;
+      } else {
+        moKind = 'flat';
+        moDeltaPct = 0;
       }
       // Drivers for MoM change
       const drivers = [];
@@ -223,6 +230,7 @@ const useAsinTrends = (asins) => {
         summary: {
           items: summaryItems,
           moGuard,
+          moKind,
           moDeltaPct,
           drivers,
           confidence,
@@ -255,18 +263,22 @@ const useAsinTrends = (asins) => {
         const title = (asins.find(a => a.id === id)?.title) || (asins.find(a => String(a.id) === String(id))?.title) || '';
         const guard = t?.summary?.moGuard;
         const pct = t?.summary?.moDeltaPct;
+        const kind = t?.summary?.moKind;
         const drv = (t?.summary?.drivers || []).slice(0,2).join(', ');
         if (!guard || guard === 'stable') return null;
-        return `${title || 'ASIN'}: ${guard === 'better' ? 'migliore' : 'peggiore'} (${Number.isFinite(pct) ? pct.toFixed(1) : '0'}%) — ${drv}`;
+        const pctLabel = kind === 'new' ? 'nuovo' : (kind === 'lost' ? 'perso' : (Number.isFinite(pct) ? `${pct.toFixed(1)}%` : '—'));
+        return `${title || 'ASIN'}: ${guard === 'better' ? 'migliore' : 'peggiore'} (${pctLabel}) — ${drv}`;
       }).filter(Boolean).slice(0, 12);
       const details = entries.map(([id, t]) => {
         const asin = asins.find(a => a.id === id) || asins.find(a => String(a.id) === String(id));
+        const pctVal = Number.isFinite(t?.summary?.moDeltaPct) ? Number(t.summary.moDeltaPct.toFixed(1)) : null;
         return {
           id,
           asin: asin?.asin,
           title: asin?.title,
           guard: t?.summary?.moGuard,
-          pct: Number.isFinite(t?.summary?.moDeltaPct) ? Number(t.summary.moDeltaPct.toFixed(1)) : 0,
+          kind: t?.summary?.moKind || 'ratio',
+          pct: pctVal,
           drivers: (t?.summary?.drivers || []).slice(0, 4),
           confidence: t?.summary?.confidence || 'low',
           stats: t?.summary?.stats || null,
@@ -274,7 +286,7 @@ const useAsinTrends = (asins) => {
       }).filter(d => d.guard && d.guard !== 'stable');
       // Create a stable fingerprint based on essential fields
       const detailsForFp = details
-        .map(d => ({ id: String(d.id), guard: d.guard, pct: Number(d.pct).toFixed(1), drv: (d.drivers||[]).slice(0,4).join('|') }))
+        .map(d => ({ id: String(d.id), guard: d.guard, kind: d.kind, pct: d.pct != null ? Number(d.pct).toFixed(1) : 'NA', drv: (d.drivers||[]).slice(0,4).join('|') }))
         .sort((a,b) => (a.id + a.guard + a.pct + a.drv).localeCompare(b.id + b.guard + b.pct + b.drv));
       const countsObj = { better: better.length, worse: worse.length, stable: stable.length };
       const fingerprint = JSON.stringify({ counts: countsObj, details: detailsForFp });

@@ -13,6 +13,7 @@ export async function runScrapeWithRetry(
 	{ asin, country, userId },
 	{ retries = 3, baseDelay = 900 } = {}
 ) {
+ 
 	let lastErr;
 	for (let attempt = 1; attempt <= retries; attempt++) {
 		try {
@@ -55,6 +56,15 @@ export const scrapeAndProcessAsin = async (asinToScrape, countryCode, user) => {
 
 		const processedData = functionResponse.data;
 
+		// Enrich product details via ScraperAPI (page count, dimensions, binding, language, etc.)
+		try {
+			await supabase.functions.invoke('scrape_product_details', {
+				body: { asin: asinToScrape, country: countryCode || 'com', userId: user.id },
+			});
+		} catch (e) {
+			console.warn('enrich details failed', e?.message || e);
+		}
+
 		if (functionResponse.isNew) {
 			toast({ title: 'ASIN Aggiunto!', description: `${processedData.title} è ora monitorato.` });
 		} else {
@@ -93,6 +103,12 @@ export async function processAllAsins(
 						{ asin, country: country || 'com', userId },
 						{ retries, baseDelay }
 					);
+					// Best-effort enrichment (non-blocking)
+					try {
+						await supabase.functions.invoke('scrape_product_details', {
+							body: { asin, country: country || 'com', userId },
+						});
+					} catch (_) {}
 					onProgress?.({ asin, ok: true });
 					return data?.data || null;
 				} catch (err) {
@@ -107,6 +123,42 @@ export async function processAllAsins(
 		await sleep(pauseMs + Math.floor(Math.random() * 450));
 	}
 	return results;
+}
+
+/**
+ * Backfill enrichment only (no baseline scrape): calls scrape_product_details for all items.
+ * - max: parallel concurrency (default 5)
+ * - pause between batches to avoid rate limits
+ * - onProgress: ({ asin, ok, error }) per item
+ */
+export async function enrichAllAsins(
+  { items, userId, max = 5, pauseMs = 600 },
+  onProgress
+) {
+  const results = [];
+  for (let i = 0; i < items.length; i += max) {
+    const chunk = items.slice(i, i + max);
+    const chunkResults = await Promise.all(
+      chunk.map(async ({ asin, country }) => {
+        try {
+          const { data, error } = await supabase.functions.invoke('scrape_product_details', {
+            body: { asin, country: country || 'com', userId },
+          });
+          if (error) throw error;
+          onProgress?.({ asin, ok: true });
+          return data || null;
+        } catch (err) {
+          onProgress?.({ asin, ok: false, error: err?.message || String(err) });
+          return null;
+        }
+      })
+    );
+    results.push(...chunkResults);
+    if (i + max < items.length) {
+      await sleep(pauseMs + Math.floor(Math.random() * 300));
+    }
+  }
+  return results;
 }
 
 export const deleteAsinAndHistory = async (asinToDelete) => {

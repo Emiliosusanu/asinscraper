@@ -2,5 +2,15 @@
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron-generate-notifications",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron-reset-keys",
+      "schedule": "0 3 * * *"
+    }
   ]
 }

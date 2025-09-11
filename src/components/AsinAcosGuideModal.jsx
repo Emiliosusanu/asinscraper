@@ -1,6 +1,7 @@
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Target, TrendingUp, AlertTriangle, BarChart2, Lightbulb, Gauge, Layers3, Focus, Waypoints, BadgePercent, Clock } from 'lucide-react';
+import { Target, TrendingUp, AlertTriangle, BarChart2, Lightbulb, Gauge, Layers3, Focus, Waypoints, BadgePercent, Clock, Info } from 'lucide-react';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { estimateRoyalty } from '@/lib/royaltyEstimator';
 
 const asPct = (n) => (n != null && isFinite(n) ? `${n.toFixed(1)}%` : '—');
@@ -31,8 +32,8 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
   const asin = asinData?.asin || null;
   const countryCode = (asinData?.country || '').toLowerCase();
 
-  // Budget planner states (10,000 USD) — declared early so effects can reference them
-  const [budgetUsd, setBudgetUsd] = React.useState(10000);
+  // Budget planner states (300 USD default) — declared early so effects can reference them
+  const [budgetUsd, setBudgetUsd] = React.useState(300);
   const [horizonDays, setHorizonDays] = React.useState(30);
   const [scenario, setScenario] = React.useState('bilanciato'); // conservativo | bilanciato | aggressivo
   const splitsByScenario = {
@@ -53,7 +54,7 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
   const tMid = (targetMin != null && targetMax != null) ? (targetMin + targetMax) / 2 : null;
   const [calcTargetAcos, setCalcTargetAcos] = React.useState(tMid ?? 30);
   const [calcPrice, setCalcPrice] = React.useState(price || 9.99);
-  const [calcCvr, setCalcCvr] = React.useState(10);
+  const [calcCvr, setCalcCvr] = React.useState(15);
   const [prefsLoaded, setPrefsLoaded] = React.useState(false);
   const [kdpPreset, setKdpPreset] = React.useState('fiction'); // 'low' | 'fiction'
   React.useEffect(() => {
@@ -102,7 +103,7 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
   // Effective values (fallback to recommended when inputs are empty/non‑finite)
   const effTargetAcos = Number.isFinite(calcTargetAcos) ? calcTargetAcos : (tMid ?? 30);
   const effPrice = Number.isFinite(calcPrice) ? calcPrice : (price || 9.99);
-  const effCvr = Number.isFinite(calcCvr) ? calcCvr : (kdpPreset === 'low' ? 6 : 10);
+  const effCvr = Number.isFinite(calcCvr) ? calcCvr : (kdpPreset === 'low' ? 6 : 15);
   const calcCpc = (isFinite(effTargetAcos) && isFinite(effPrice) && isFinite(effCvr))
     ? (Math.max(0, effTargetAcos) / 100) * Math.max(0, effPrice) * (Math.max(0, effCvr) / 100)
     : null;
@@ -150,8 +151,8 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
       setCalcCvr((prev) => (prev ? prev : 6));
       if (tMid != null) setCalcTargetAcos(Math.max(0, tMid * 0.9));
     } else {
-      // Fiction/Non-Fiction: CVR base 10%, ACOS target su media suggerita
-      setCalcCvr((prev) => (prev ? prev : 10));
+      // Fiction/Non-Fiction: CVR base 15%, ACOS target su media suggerita
+      setCalcCvr((prev) => (prev ? prev : 15));
       if (tMid != null) setCalcTargetAcos(tMid);
     }
   }, [kdpPreset, tMid, prefsLoaded]);
@@ -186,7 +187,7 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-[92vw] sm:max-w-3xl md:max-w-6xl lg:max-w-7xl bg-slate-900 border-slate-700 text-white p-0 overflow-hidden max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-[92vw] sm:max-w-3xl md:max-w-6xl lg:max-w-7xl bg-slate-900 border-slate-700 text-white p-0 overflow-y-auto max-h-[90vh] flex flex-col">
         <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
           <div className="flex items-center justify-between gap-2">
             <DialogTitle className="flex items-center gap-2 text-xl sm:text-2xl">
@@ -195,33 +196,54 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
             </DialogTitle>
             {/* Close button intentionally removed for compact UI; users can click outside or press ESC */}
           </div>
-          <DialogDescription className="text-gray-400 mt-1">
+          <DialogDescription className="text-gray-300 mt-1 leading-relaxed">
             {asinData?.title || asinData?.asin}
+            <span className="block text-[12px] text-gray-400 mt-1">Questa guida ti aiuta a impostare budget, ACOS target e CPC iniziali, con spiegazioni chiare e KPI ben evidenziati.</span>
           </DialogDescription>
         </DialogHeader>
 
-        {/* Riepilogo */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-4 sm:px-6 pb-4">
+        {/* Headline KPIs for quick scan */}
+        <div className="px-4 sm:px-6 pb-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-white/5 rounded-lg p-3">
-            <p className="text-[11px] text-gray-400">Prezzo di listino</p>
-            <p className="text-white font-semibold">{price > 0 ? `$${price.toFixed(2)}` : '—'}</p>
+            <p className="text-[11px] text-gray-400">Spesa/giorno</p>
+            <p className="text-white font-extrabold text-2xl">${(dailyTotal || 0).toFixed(2)}</p>
           </div>
           <div className="bg-white/5 rounded-lg p-3">
-            <p className="text-[11px] text-gray-400">Royalty per copia</p>
-            <p className="text-white font-semibold">{effectiveRoyalty > 0 ? `$${effectiveRoyalty.toFixed(2)}` : '—'}</p>
+            <p className="text-[11px] text-gray-400">CPC stimato</p>
+            <p className="text-white font-extrabold text-2xl">{calcCpc != null ? `$${calcCpc.toFixed(2)}` : '—'}</p>
           </div>
           <div className="bg-white/5 rounded-lg p-3">
-            <p className="text-[11px] text-gray-400">ACOS di pareggio</p>
-            <p className="text-white font-semibold">{asPct(be)}</p>
+            <p className="text-[11px] text-gray-400">Ordini/giorno</p>
+            <p className="text-white font-extrabold text-2xl">{Number.isFinite(dailyOrders) ? dailyOrders.toFixed(1) : '—'}</p>
           </div>
           <div className="bg-white/5 rounded-lg p-3">
-            <p className="text-[11px] text-gray-400">ACOS target consigliato</p>
-            <p className="text-white font-semibold">{targetMin != null ? `${asPct(targetMin)} – ${asPct(targetMax)}` : '—'}</p>
+            <p className="text-[11px] text-gray-400">ROAS (giorno)</p>
+            <p className="text-white font-extrabold text-2xl">{dailyRoas != null ? `${dailyRoas.toFixed(2)}x` : '—'}</p>
           </div>
         </div>
 
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-6 space-y-8">
+        {/* Riepilogo */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-4 sm:px-6 pb-4">
+          <div className="bg-white/5 rounded-lg p-3 transition-transform hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset]">
+            <p className="text-[11px] text-gray-400">Prezzo di listino</p>
+            <p className="text-white font-bold text-xl">{price > 0 ? `$${price.toFixed(2)}` : '—'}</p>
+          </div>
+          <div className="bg-white/5 rounded-lg p-3 transition-transform hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset]">
+            <p className="text-[11px] text-gray-400">Royalty per copia</p>
+            <p className="text-white font-bold text-xl">{effectiveRoyalty > 0 ? `$${effectiveRoyalty.toFixed(2)}` : '—'}</p>
+          </div>
+          <div className="bg-white/5 rounded-lg p-3 transition-transform hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset]">
+            <p className="text-[11px] text-gray-400">ACOS di pareggio</p>
+            <p className="text-white font-bold text-xl">{asPct(be)}</p>
+          </div>
+          <div className="bg-white/5 rounded-lg p-3 transition-transform hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset]">
+            <p className="text-[11px] text-gray-400">ACOS target consigliato</p>
+            <p className="text-white font-bold text-xl">{targetMin != null ? `${asPct(targetMin)} – ${asPct(targetMax)}` : '—'}</p>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 px-4 sm:px-6 pb-6 space-y-8">
           {/* Azioni consigliate */}
           <section>
             <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-3"><Target className="w-5 h-5 text-emerald-400"/> Azioni consigliate</h3>
@@ -255,60 +277,85 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
           {/* Calcolatore CPC e Offerte */}
           <section>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2"><BadgePercent className="w-5 h-5 text-pink-400"/> Calcolatore CPC e Offerte</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-white flex items-center gap-2"><BadgePercent className="w-5 h-5 text-pink-400"/> Calcolatore CPC e Offerte</h3>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button className="text-gray-300 hover:text-white" aria-label="Info calcolatore"><Info className="w-4 h-4"/></button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-72 glass-card bg-slate-900 border-slate-700 text-gray-100 text-xs">
+                    CPC ≈ ACOS target × Prezzo × CVR. Le offerte iniziali (Auto/Broad/Exact) sono calcolate dal CPC con un leggero offset.
+                  </PopoverContent>
+                </Popover>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-[12px] text-gray-400">Preset KDP:</span>
-                <button onClick={()=> setKdpPreset('low')} className={`px-2 py-1 rounded border text-[12px] ${kdpPreset==='low' ? 'border-emerald-400 text-white' : 'border-white/10 text-gray-300'}`}>Low‑Content</button>
-                <button onClick={()=> setKdpPreset('fiction')} className={`px-2 py-1 rounded border text-[12px] ${kdpPreset==='fiction' ? 'border-emerald-400 text-white' : 'border-white/10 text-gray-300'}`}>Fiction/Non‑Fiction</button>
+                <div className="flex rounded-full bg-white/5 border border-white/10 p-1">
+                  <button onClick={()=> setKdpPreset('low')} className={`px-3 py-1 rounded-full text-[12px] ${kdpPreset==='low' ? 'bg-emerald-500/20 text-white border border-emerald-400/40' : 'text-gray-300'}`}>Low‑Content</button>
+                  <button onClick={()=> setKdpPreset('fiction')} className={`px-3 py-1 rounded-full text-[12px] ${kdpPreset==='fiction' ? 'bg-emerald-500/20 text-white border border-emerald-400/40' : 'text-gray-300'}`}>Fiction/Non‑Fiction</button>
+                </div>
+                <button
+                  onClick={() => { setBudgetUsd(300); setHorizonDays(30); setCalcCvr(15); setScenario('bilanciato'); }}
+                  className="px-3 py-1 rounded-full border border-white/10 hover:border-emerald-400 text-[12px] text-gray-200"
+                >Reset</button>
               </div>
             </div>
             <div className="grid sm:grid-cols-3 gap-3 text-sm">
               <div className="bg-white/5 rounded-lg p-3 space-y-2">
                 <label className="block text-[11px] text-gray-400">ACOS target (%)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  inputMode="decimal"
-                  placeholder={(tMid ?? 30).toFixed(1)}
-                  className="w-full bg-transparent border border-white/10 rounded px-2 py-1 text-white"
-                  value={Number.isFinite(calcTargetAcos) ? String(calcTargetAcos) : ''}
-                  onChange={(e)=> {
-                    const v = e.target.value;
-                    if (v === '') { setCalcTargetAcos(NaN); return; }
-                    setCalcTargetAcos(Number(v));
-                  }}
-                />
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    inputMode="decimal"
+                    placeholder={(tMid ?? 30).toFixed(1)}
+                    className="w-full bg-transparent border border-white/10 rounded pl-2 pr-10 py-1 text-white"
+                    value={Number.isFinite(calcTargetAcos) ? String(calcTargetAcos) : ''}
+                    onChange={(e)=> {
+                      const v = e.target.value;
+                      if (v === '') { setCalcTargetAcos(NaN); return; }
+                      setCalcTargetAcos(Number(v));
+                    }}
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
+                </div>
                 <label className="block text-[11px] text-gray-400">Prezzo ($)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  inputMode="decimal"
-                  placeholder={(price || 9.99).toFixed(2)}
-                  className="w-full bg-transparent border border-white/10 rounded px-2 py-1 text-white"
-                  value={Number.isFinite(calcPrice) ? String(calcPrice) : ''}
-                  onChange={(e)=> {
-                    const v = e.target.value;
-                    if (v === '') { setCalcPrice(NaN); return; }
-                    setCalcPrice(Number(v));
-                  }}
-                />
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    inputMode="decimal"
+                    placeholder={(price || 9.99).toFixed(2)}
+                    className="w-full bg-transparent border border-white/10 rounded pl-6 pr-2 py-1 text-white"
+                    value={Number.isFinite(calcPrice) ? String(calcPrice) : ''}
+                    onChange={(e)=> {
+                      const v = e.target.value;
+                      if (v === '') { setCalcPrice(NaN); return; }
+                      setCalcPrice(Number(v));
+                    }}
+                  />
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                </div>
                 <label className="block text-[11px] text-gray-400">CVR (%)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  inputMode="decimal"
-                  placeholder={String(kdpPreset === 'low' ? 6 : 10)}
-                  className="w-full bg-transparent border border-white/10 rounded px-2 py-1 text-white"
-                  value={Number.isFinite(calcCvr) ? String(calcCvr) : ''}
-                  onChange={(e)=> {
-                    const v = e.target.value;
-                    if (v === '') { setCalcCvr(NaN); return; }
-                    setCalcCvr(Number(v));
-                  }}
-                />
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    inputMode="decimal"
+                    placeholder={String(kdpPreset === 'low' ? 6 : 15)}
+                    className="w-full bg-transparent border border-white/10 rounded pl-2 pr-10 py-1 text-white"
+                    value={Number.isFinite(calcCvr) ? String(calcCvr) : ''}
+                    onChange={(e)=> {
+                      const v = e.target.value;
+                      if (v === '') { setCalcCvr(NaN); return; }
+                      setCalcCvr(Number(v));
+                    }}
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
+                </div>
               </div>
               <div className="bg-white/5 rounded-lg p-3">
                 <p className="text-gray-400">CPC consigliato</p>
@@ -324,12 +371,13 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
               </div>
             </div>
           </section>
-          {/* Pianificatore Budget (10.000 USD) */}
+          {/* Pianificatore Budget (300 USD) */}
           <section>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2"><BarChart2 className="w-5 h-5 text-blue-400"/> Pianificatore Budget (10.000 USD)</h3>
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2"><BarChart2 className="w-5 h-5 text-blue-400"/> Pianificatore Budget (300 USD)</h3>
               <button onClick={exportBudgetCsv} className="px-3 py-1.5 rounded border border-white/10 hover:border-emerald-400 text-[12px] text-gray-200">Esporta CSV</button>
             </div>
+            <p className="text-[12px] text-gray-400 -mt-1 mb-2">Distribuisci il budget per giorno e canale; i suggerimenti di CPC e offerte si aggiornano automaticamente.</p>
             <div className="grid sm:grid-cols-4 gap-3 text-sm">
               <div className="bg-white/5 rounded-lg p-3 space-y-2">
                 <label className="block text-[11px] text-gray-400">Budget totale (USD)</label>
@@ -338,7 +386,7 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
                   step="100"
                   min="0"
                   inputMode="numeric"
-                  placeholder="10000"
+                  placeholder="300"
                   className="w-full bg-transparent border border-white/10 rounded px-2 py-1 text-white"
                   value={Number.isFinite(budgetUsd) ? String(budgetUsd) : ''}
                   onChange={(e)=> {

@@ -136,6 +136,8 @@ const AsinMonitoring = () => {
   const [asinToDelete, setAsinToDelete] = useState(null);
   const [sort, setSort] = useState("bsr-asc");
   const [filter, setFilter] = useState("");
+  const [inProgressAsins, setInProgressAsins] = useState(new Set());
+  const lastScrollTsRef = useRef(0);
 
   
   const { trends, refreshTrends } = useAsinTrends(trackedAsins);
@@ -310,6 +312,9 @@ const handleRefreshAll = async () => {
     // prendo TUTTI gli ASIN tracciati (non solo i filtrati a schermo)
     const items = trackedAsins.map(a => ({ asin: a.asin, country: a.country }));
 
+    // mark all as in-progress for visuals
+    setInProgressAsins(new Set(items.map(i => i.asin)));
+
     await processAllAsins(
       {
         items,
@@ -321,10 +326,32 @@ const handleRefreshAll = async () => {
       },
       ({ asin, ok, error }) => {
         if (!ok) console.warn('Scrape fallito', asin, error);
+        // unmark asin as completed
+        setInProgressAsins(prev => {
+          const next = new Set(prev);
+          next.delete(asin);
+          return next;
+        });
+        // gently scroll to the just-completed ASIN
+        try {
+          const now = Date.now();
+          if (now - (lastScrollTsRef.current || 0) < 400) {
+            // throttle to avoid jitter with fast completions
+            setTimeout(() => {
+              const el = document.querySelector(`[data-asin="${asin}"]`);
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 400);
+          } else {
+            const el = document.querySelector(`[data-asin="${asin}"]`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+          lastScrollTsRef.current = Date.now();
+        } catch (_) {}
       }
     );
   } finally {
     setIsRefreshingAll(false);
+    setInProgressAsins(new Set());
     toast({ title: 'Aggiornamento completato!', description: 'Tutti i dati sono stati aggiornati.' });
   }
 };
@@ -356,19 +383,19 @@ const handleRefreshAll = async () => {
         <title>Monitoraggio ASIN - KDP Insights Pro</title>
         <meta name="description" content="Aggiungi e monitora i tuoi ASIN Amazon in tempo reale." />
       </Helmet>
-      <div className="container mx-auto pb-24 lg:pb-8">
+      <div className="container mx-auto max-w-[1400px] xl:max-w-[1600px] 2xl:max-w-[1800px] pb-24 lg:pb-8">
 
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-semibold text-foreground">I tuoi ASIN ({filteredAndSortedAsins.length})</h2>
           <div className="flex gap-2">
-            <Button onClick={handleRefreshAll} variant="outline" className="border-border text-muted-foreground hover:bg-muted hover:text-foreground" disabled={isRefreshingAll}>
+            <Button size="xs" onClick={handleRefreshAll} variant="outline" className="border-border text-muted-foreground hover:bg-muted hover:text-foreground rounded-full px-3" disabled={isRefreshingAll}>
               {isRefreshingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             </Button>
-            <div className="bg-muted/50 p-1 rounded-lg border border-border">
-              <Button onClick={() => setViewMode('grid')} variant={viewMode === 'grid' ? 'default' : 'ghost'} size="sm" className={viewMode === 'grid' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}>
+            <div className="bg-muted/50 p-1 rounded-full border border-border">
+              <Button onClick={() => setViewMode('grid')} variant={viewMode === 'grid' ? 'default' : 'ghost'} size="xs" className={viewMode === 'grid' ? 'bg-primary text-primary-foreground rounded-full' : 'text-muted-foreground rounded-full'}>
                 <LayoutGrid className="w-4 h-4" />
               </Button>
-              <Button onClick={() => setViewMode('list')} variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" className={viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}>
+              <Button onClick={() => setViewMode('list')} variant={viewMode === 'list' ? 'default' : 'ghost'} size="xs" className={viewMode === 'list' ? 'bg-primary text-primary-foreground rounded-full' : 'text-muted-foreground rounded-full'}>
                 <List className="w-4 h-4" />
               </Button>
             </div>
@@ -400,7 +427,7 @@ const handleRefreshAll = async () => {
                   onEditRoyalty={() => setSelectedAsinForRoyalty(item)}
                   onShowReviews={() => setSelectedAsinForReviews(item)}
                   onShowLogs={() => setSelectedAsinForLogs(item)}
-                  isRefreshing={refreshingAsin === item.asin}
+                  isRefreshing={(refreshingAsin === item.asin) || inProgressAsins.has(item.asin)}
                 />
               </div>
             ))}
@@ -418,7 +445,7 @@ const handleRefreshAll = async () => {
                   onEditRoyalty={() => setSelectedAsinForRoyalty(item)}
                   onShowReviews={() => setSelectedAsinForReviews(item)}
                   onShowLogs={() => setSelectedAsinForLogs(item)}
-                  isRefreshing={refreshingAsin === item.asin}
+                  isRefreshing={(refreshingAsin === item.asin) || inProgressAsins.has(item.asin)}
                 />
               </div>
             ))}

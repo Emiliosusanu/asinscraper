@@ -155,10 +155,11 @@ React.useEffect(() => {
   return (
     <div
       ref={cardRef}
+      data-asin={data.asin}
       onMouseMove={handleMouseMove}
       onMouseEnter={() => setGlowActive(true)}
       onMouseLeave={() => setGlowActive(false)}
-      className="relative glass-card p-5 flex flex-col h-full group transition-shadow duration-200 md:hover:shadow-lg"
+      className={`relative glass-card p-5 flex flex-col h-full group transition-shadow duration-200 md:hover:shadow-[0_0_28px_rgba(255,255,255,0.18)] ${isRefreshing ? 'ring-2 ring-emerald-400/40 shadow-[0_0_24px_rgba(16,185,129,0.25)]' : ''}`}
       style={{
         // provide safe defaults for CSS vars
         '--mx': '50%',
@@ -167,28 +168,38 @@ React.useEffect(() => {
         willChange: 'box-shadow'
       }}
     >
-      {/* mouse-follow light, fully non-interactive and solid */}
+      {/* local keyframes for pulsing */}
+      <style>{`
+        @keyframes cardPulse { 0%, 100% { opacity: 0.22; } 50% { opacity: 0.6; } }
+      `}</style>
+      {/* mouse-follow light, white neon with screen blend */}
       <div
         aria-hidden="true"
-        className={`pointer-events-none absolute inset-0 rounded-2xl transition-opacity duration-150 hidden md:block ${glowActive ? 'opacity-100' : 'opacity-0'}`}
+        className={`pointer-events-none absolute inset-0 rounded-2xl transition-opacity duration-150 hidden md:block ${(glowActive || isRefreshing) ? 'opacity-100' : 'opacity-0'}`}
         style={{
-          background: 'radial-gradient(160px circle at var(--mx) var(--my), rgba(255,255,255,0.07), transparent 70%)'
+          background: 'radial-gradient(140px circle at var(--mx) var(--my), rgba(255,255,255,0.22), rgba(255,255,255,0.08) 45%, transparent 70%), radial-gradient(360px circle at var(--mx) var(--my), rgba(255,255,255,0.10), transparent 70%)',
+          mixBlendMode: 'screen',
+          animation: isRefreshing ? 'cardPulse 1400ms ease-in-out infinite' : 'none'
         }}
       />
       <div className="flex gap-4 mb-4">
         <a href={amazonLink} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 relative group/cover">
           {data.is_bestseller && (
             <div className="absolute -left-2 -top-2 z-10">
-              <BestsellerBadge />
+              <BestsellerBadge small />
             </div>
           )}
-          <div className="relative w-24 h-36 overflow-hidden rounded-md">
+          <div className="relative w-24 h-36 overflow-hidden rounded-md ring-1 ring-white/10 transition-colors duration-200 md:group-hover/cover:ring-white/40">
              {/* progress indicator (scraper update) */}
              {isRefreshing && (
                <div className="absolute top-1 right-1 z-10">
                  <CircularProgress size={22} thickness={2} />
                </div>
              )}
+             {/* elegant moving sheen */}
+             <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+               <div className="absolute top-0 left-0 h-full w-1/2 -translate-x-[60%] md:group-hover/cover:translate-x-[180%] transition-transform duration-700 ease-in-out bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 blur-[1px]" />
+             </div>
              {isRefreshing && (
                <div
                  aria-hidden="true"

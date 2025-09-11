@@ -30,7 +30,15 @@ const ApiKeyManager = () => {
     if (error) {
       toast({ title: 'Errore nel caricare le chiavi API', description: error.message, variant: 'destructive' });
     } else {
-      setApiKeys(data.map(k => ({ ...k, isEditing: false, tempMaxCredits: k.max_credits, tempCostPerCall: k.cost_per_call })));
+      const nowMs = Date.now();
+      const dayMs = 24 * 60 * 60 * 1000;
+      setApiKeys(data.map(k => {
+        const base = k?.last_reset_at || k?.created_at;
+        const baseDate = base ? new Date(base) : null;
+        const elapsed = baseDate ? Math.floor((nowMs - baseDate.getTime()) / dayMs) : 0;
+        const tempDaysLeft = Math.max(0, 30 - elapsed);
+        return ({ ...k, isEditing: false, tempMaxCredits: k.max_credits, tempCostPerCall: k.cost_per_call, tempDaysLeft });
+      }));
     }
     setIsLoading(false);
   }, [user]);
@@ -54,7 +62,7 @@ const ApiKeyManager = () => {
         status: 'active',
         credits: 1000,
         max_credits: 1000,
-        cost_per_call: 1,
+        cost_per_call: 5,
         success_count: 0,
         failure_count: 0,
       })
@@ -90,6 +98,13 @@ const ApiKeyManager = () => {
     if (error) {
       toast({ title: 'Errore nel reset', description: error.message, variant: 'destructive' });
     } else {
+      // Ensure next reset defaults to 30 days from now
+      try {
+        await supabase
+          .from('scraper_api_keys')
+          .update({ last_reset_at: new Date().toISOString() })
+          .eq('id', keyId);
+      } catch (_) {}
       fetchApiKeys();
       toast({ title: 'Crediti Resettati!', description: 'I crediti per la chiave sono stati ripristinati.' });
     }
@@ -97,9 +112,17 @@ const ApiKeyManager = () => {
 
   const handleUpdateKey = async (keyId) => {
     const keyToUpdate = apiKeys.find(k => k.id === keyId);
+    const updatePayload = { max_credits: keyToUpdate.tempMaxCredits, cost_per_call: keyToUpdate.tempCostPerCall };
+    // If user edited days-left, adjust last_reset_at so next reset is in X days
+    const dl = Number.isFinite(keyToUpdate?.tempDaysLeft) ? Math.max(0, Math.min(30, Number(keyToUpdate.tempDaysLeft))) : null;
+    if (dl != null) {
+      const dayMs = 24 * 60 * 60 * 1000;
+      const lastReset = new Date(Date.now() - ((30 - dl) * dayMs));
+      updatePayload.last_reset_at = lastReset.toISOString();
+    }
     const { error } = await supabase
       .from('scraper_api_keys')
-      .update({ max_credits: keyToUpdate.tempMaxCredits, cost_per_call: keyToUpdate.tempCostPerCall })
+      .update(updatePayload)
       .eq('id', keyId);
     
     if (error) {
@@ -121,6 +144,22 @@ const ApiKeyManager = () => {
       case 'inactive': return <span className="px-2 py-1 text-xs rounded-full bg-gray-500/20 text-gray-400">Inattiva</span>;
       case 'exhausted': return <span className="px-2 py-1 text-xs rounded-full bg-yellow-500/20 text-yellow-300">Esaurita</span>;
       default: return <span className="px-2 py-1 text-xs rounded-full bg-blue-500/20 text-blue-400">{status}</span>;
+    }
+  };
+
+  const resetInfoFor = (k) => {
+    try {
+      const base = k?.last_reset_at || k?.created_at;
+      const baseDate = base ? new Date(base) : null;
+      const now = new Date();
+      const dayMs = 24 * 60 * 60 * 1000;
+      const elapsed = baseDate ? Math.floor((now.getTime() - baseDate.getTime()) / dayMs) : 0;
+      const daysLeft = Math.max(0, 30 - elapsed);
+      const next = baseDate ? new Date(baseDate.getTime() + 30 * dayMs) : null;
+      const nextStr = next ? next.toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+      return { daysLeft, nextStr };
+    } catch (_) {
+      return { daysLeft: 0, nextStr: '—' };
     }
   };
 
@@ -153,6 +192,9 @@ const ApiKeyManager = () => {
                   <Key className="w-5 h-5 text-accent" />
                   <span className="font-mono text-muted-foreground">••••••••{key.api_key.slice(-4)}</span>
                   {getStatusPill(key.status)}
+                  <span className="px-2 py-0.5 text-[11px] rounded-full border border-white/10 text-gray-300">
+                    Reset tra <span className="text-white font-medium">{resetInfoFor(key).daysLeft}g</span>
+                  </span>
                 </div>
                 <div className="flex items-center gap-1">
                   <Button size="icon" variant="ghost" onClick={() => setLogModalKey(key)}><History className="w-4 h-4" /></Button>
@@ -173,6 +215,10 @@ const ApiKeyManager = () => {
                         <Label htmlFor={`cost-${key.id}`} className="text-xs">Costo per Chiamata</Label>
                         <Input id={`cost-${key.id}`} type="number" value={key.tempCostPerCall} onChange={(e) => handleInputChange(key.id, 'tempCostPerCall', parseInt(e.target.value))} className="glass-input mt-1" />
                       </div>
+                      <div>
+                        <Label htmlFor={`days-left-${key.id}`} className="text-xs">Giorni rimanenti al reset (0–30)</Label>
+                        <Input id={`days-left-${key.id}`} type="number" min="0" max="30" value={key.tempDaysLeft} onChange={(e) => handleInputChange(key.id, 'tempDaysLeft', parseInt(e.target.value))} className="glass-input mt-1" />
+                      </div>
                       <div className="sm:col-span-2 flex justify-end">
                         <Button size="sm" onClick={() => handleUpdateKey(key.id)}><Save className="w-4 h-4 mr-2" />Salva Modifiche</Button>
                       </div>
@@ -180,10 +226,11 @@ const ApiKeyManager = () => {
                   </motion.div>
                 )}
               </AnimatePresence>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-border">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 pt-4 border-t border-border">
                 <div className="text-sm text-muted-foreground">Crediti: <span className="font-semibold text-foreground">{key.credits}/{key.max_credits}</span></div>
                 <div className="text-sm text-muted-foreground">Successi: <span className="font-semibold text-green-400">{key.success_count}</span></div>
                 <div className="text-sm text-muted-foreground">Fallimenti: <span className="font-semibold text-red-400">{key.failure_count}</span></div>
+                <div className="text-sm text-muted-foreground">Prossimo reset: <span className="font-semibold text-foreground">{resetInfoFor(key).daysLeft}g</span> <span className="text-xs text-gray-400">({resetInfoFor(key).nextStr})</span></div>
               </div>
             </motion.li>
           ))}
