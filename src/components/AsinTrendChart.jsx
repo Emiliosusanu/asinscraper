@@ -795,16 +795,16 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                     <PopoverTrigger asChild>
                       <Button size="xs" variant="outline" className={`${toggleBtnClass} px-3`}>Tune</Button>
                     </PopoverTrigger>
-                    <PopoverContent align="end" className="w-64 bg-slate-900 border-slate-700 text-gray-100">
-                      <div className="space-y-2 text-sm">
+                    <PopoverContent align="end" className="w-[94vw] max-w-[520px] bg-slate-900 border-slate-700 text-gray-100 p-3">
+                      <div className="space-y-2 text-[12px]">
                         <div className="font-semibold text-gray-200">Periodo rapido</div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(7) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(7)} onClick={() => setRangeDays(7)}>7g</Button>
                           <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(30) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(30)} onClick={() => setRangeDays(30)}>30g</Button>
                           <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(90) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(90)} onClick={() => setRangeDays(90)}>90g</Button>
                         </div>
                         <div className="font-semibold text-gray-200 pt-2">Filtri</div>
-                        <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <Button size="xs" variant="outline" title="Aggrega i campioni giornalieri (BSR=min, Recensioni=max, Prezzo=media)" className={`${toggleBtnClass} ${normalize ? activeBtnClass : ''}`} aria-pressed={!!normalize} onClick={() => setNormalize(v => !v)}>Normalizza</Button>
                           <Button size="xs" variant="outline" title="Smussa BSR/Prezzo con una media mobile a 3 punti" className={`${toggleBtnClass} ${smooth ? activeBtnClass : ''}`} aria-pressed={!!smooth} onClick={() => setSmooth(v => !v)}><Wand2 className="w-3.5 h-3.5 mr-1" />Smussa</Button>
                           <Button size="xs" variant="outline" title="Mostra/Nasconde la serie Prezzo" className={`${toggleBtnClass} ${showPrice ? activeBtnClass : ''}`} aria-pressed={!!showPrice} onClick={() => setShowPrice(v => !v)}>Prezzo</Button>
@@ -814,7 +814,9 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                         </div>
                         <div className="text-[11px] text-gray-400 pt-1">• Smussa: media mobile 3pt per linee più fluide. • Outlier: riduce picchi isolati sul BSR.</div>
                         <div className="font-semibold text-gray-200 pt-2">Data</div>
-                        <DateRangePicker date={dateRange} setDate={setDateRange} />
+                        <div className="w-full text-[12px]">
+                          <DateRangePicker date={dateRange} setDate={setDateRange} />
+                        </div>
                       </div>
                     </PopoverContent>
                   </Popover>
@@ -836,8 +838,10 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                     <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(30) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(30)} onClick={() => setRangeDays(30)}>30g</Button>
                     <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(90) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(90)} onClick={() => setRangeDays(90)}>90g</Button>
                   </div>
-                  <div className="hidden sm:block min-w-[480px]">
-                    <DateRangePicker date={dateRange} setDate={setDateRange} />
+                  <div className="hidden sm:block min-w-[320px] md:min-w-[380px] lg:min-w-[460px]">
+                    <div className="text-[12px]">
+                      <DateRangePicker date={dateRange} setDate={setDateRange} />
+                    </div>
                   </div>
                   <Button onClick={() => setNormalize(v => !v)} variant="outline" size="xs" title="Aggrega i campioni giornalieri (BSR=min, Recensioni=max, Prezzo=media)" className={`${toggleBtnClass} ${normalize ? activeBtnClass : ''}`} aria-pressed={!!normalize}>{normalize ? 'Normalizza: ON' : 'Normalizza: OFF'}</Button>
                   <Button onClick={() => setSmooth(v => !v)} variant="outline" size="xs" title="Smussa BSR/Prezzo con una media mobile a 3 punti" className={`${toggleBtnClass} ${smooth ? activeBtnClass : ''}`} aria-pressed={!!smooth}>{smooth ? <><Wand2 className="w-3.5 h-3.5 mr-1" />Smussa: ON</> : <><Wand2 className="w-3.5 h-3.5 mr-1" />Smussa: OFF</>}</Button>
@@ -955,9 +959,8 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                   <div className="h-9 sm:h-10 flex items-center justify-end pointer-events-none">
                     <div className="flex items-center gap-2">
                       {asinData?.is_bestseller && (
-                        <div className="rounded-full bg-amber-400/10 px-2 py-0.5 border border-amber-300/30 backdrop-blur flex items-center gap-1 shadow-sm">
-                          <BestsellerBadge small />
-                          <span className="text-[10px] sm:text-xs text-amber-200 font-medium">Bestseller</span>
+                        <div className="flex items-center">
+                          <BestsellerBadge micro />
                         </div>
                       )}
                       {typeof bsrDelta7 === 'number' && isFinite(bsrDelta7) && (
