@@ -793,45 +793,6 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                 <>
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button size="xs" variant="outline" className={`${toggleBtnClass} px-3`}>Tune</Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="end" className="w-[94vw] max-w-[520px] bg-slate-900 border-slate-700 text-gray-100 p-3">
-                      <div className="space-y-2 text-[12px]">
-                        <div className="font-semibold text-gray-200">Periodo rapido</div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(7) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(7)} onClick={() => setRangeDays(7)}>7g</Button>
-                          <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(30) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(30)} onClick={() => setRangeDays(30)}>30g</Button>
-                          <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(90) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(90)} onClick={() => setRangeDays(90)}>90g</Button>
-                          {asinData?.is_bestseller && (
-                            <div className="ml-1">
-                              <BestsellerBadge micro />
-                            </div>
-                          )}
-                        </div>
-                        <div className="font-semibold text-gray-200 pt-2">Filtri</div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <Button size="xs" variant="outline" title="Aggrega i campioni giornalieri (BSR=min, Recensioni=max, Prezzo=media)" className={`${toggleBtnClass} ${normalize ? activeBtnClass : ''}`} aria-pressed={!!normalize} onClick={() => setNormalize(v => !v)}>Normalizza</Button>
-                          <Button size="xs" variant="outline" title="Smussa BSR/Prezzo con una media mobile a 3 punti" className={`${toggleBtnClass} ${smooth ? activeBtnClass : ''}`} aria-pressed={!!smooth} onClick={() => setSmooth(v => !v)}><Wand2 className="w-3.5 h-3.5 mr-1" />Smussa</Button>
-                          <Button size="xs" variant="outline" title="Mostra/Nasconde la serie Prezzo" className={`${toggleBtnClass} ${showPrice ? activeBtnClass : ''}`} aria-pressed={!!showPrice} onClick={() => setShowPrice(v => !v)}>Prezzo</Button>
-                          <Button size="xs" variant="outline" title="Attenua spike isolati nel BSR confrontando i valori vicini" className={`${toggleBtnClass} ${guardOutliers ? activeBtnClass : ''}`} aria-pressed={!!guardOutliers} onClick={() => setGuardOutliers(v => !v)}><AlertTriangle className="w-3.5 h-3.5 mr-1" />Outlier</Button>
-                          <Button size="xs" variant="outline" title="Rende monotona la serie Recensioni (mai decrescente)" className={`${toggleBtnClass} ${fixReviews ? activeBtnClass : ''}`} aria-pressed={!!fixReviews} onClick={() => setFixReviews(v => !v)}>Rec.↑</Button>
-                          <Button size="xs" variant="outline" title="Abilita/Disabilita effetto neon e pulsazioni" className={`${toggleBtnClass} ${neonMode ? activeBtnClass : ''}`} aria-pressed={!!neonMode} onClick={() => setNeonMode(v => !v)}>Neon</Button>
-                        </div>
-                        <div className="text-[11px] text-gray-400 pt-1">• Smussa: media mobile 3pt per linee più fluide. • Outlier: riduce picchi isolati sul BSR.</div>
-                        <div className="font-semibold text-gray-200 pt-2">Data</div>
-                        <div className="w-full text-[12px]">
-                          <DateRangePicker date={dateRange} setDate={setDateRange} />
-                        </div>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                  {asinData?.is_bestseller && (
-                    <div className="ml-1">
-                      <BestsellerBadge micro />
-                    </div>
-                  )}
-                  <Popover>
-                    <PopoverTrigger asChild>
                       <Button size="xs" variant="outline" className={`${toggleBtnClass} px-2`} title="Informazioni sui controlli">
                         <Info className="w-3.5 h-3.5" />
                       </Button>
@@ -843,16 +804,8 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                 </>
               ) : (
                 <div className="hidden sm:flex items-center gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(7) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(7)} onClick={() => setRangeDays(7)}>7g</Button>
-                    <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(30) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(30)} onClick={() => setRangeDays(30)}>30g</Button>
-                    <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(90) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(90)} onClick={() => setRangeDays(90)}>90g</Button>
-                    {asinData?.is_bestseller && (
-                      <div className="ml-1">
-                        <BestsellerBadge micro />
-                      </div>
-                    )}
-                  </div>
+                  {/* Quick range buttons removed from top to avoid duplication */}
+                  {/* Bestseller badge removed from top per request */}
                   <div className="hidden sm:block min-w-[320px] md:min-w-[380px] lg:min-w-[460px]">
                     <div className="text-[12px]">
                       <DateRangePicker date={dateRange} setDate={setDateRange} />
