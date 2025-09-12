@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ReferenceLine, ReferenceDot, Brush } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ReferenceLine, ReferenceDot, Brush, ReferenceArea } from 'recharts';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Loader2, X, Wand2, AlertTriangle, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -33,7 +33,7 @@ const CustomTooltip = ({ active, payload, label, currency }) => {
         {(typeof deltaPct === 'number' && isFinite(deltaPct)) && (
           <div className="flex items-center justify-between gap-3">
             <span className="text-emerald-300">BSR Δ</span>
-            <span className={`${deltaPct > 0 ? 'text-red-300' : 'text-yellow-300'}`}>{`${deltaPct > 0 ? '+' : ''}${deltaPct.toFixed(1)}%`}</span>
+            <span className={`${deltaPct > 0 ? 'text-red-300' : 'text-emerald-300'}`}>{`${deltaPct > 0 ? '+' : ''}${deltaPct.toFixed(1)}%`}</span>
           </div>
         )}
         <div className="flex items-center justify-between gap-3">
@@ -69,7 +69,7 @@ const ControlsInfo = () => (
       <li><span className="text-emerald-200 font-medium">Rec.↑:</span> impone la monotonia delle Recensioni (mai decrescente).</li>
       <li><span className="text-emerald-200 font-medium">Brush (desktop):</span> seleziona una finestra temporale direttamente nel mini-tracciato.</li>
       <li><span className="text-emerald-200 font-medium">Linee di riferimento:</span> BSR <em>Attuale</em>, <em>Migliore</em> (min storico), <em>Peggiore</em> (max storico).</li>
-      <li><span className="text-emerald-200 font-medium">Colori BSR:</span> giallo = miglioramento (BSR in discesa), rosso = peggioramento (BSR in salita).</li>
+      <li><span className="text-emerald-200 font-medium">Colori BSR:</span> verde = miglioramento (BSR in discesa), rosso = peggioramento (BSR in salita).</li>
     </ul>
     <div className="text-[11px] text-gray-400">Suggerimento: i pulsanti evidenziati in verde sono attivi.</div>
   </div>
@@ -641,12 +641,100 @@ const AsinTrendChart = ({ asinData, onClose }) => {
     return ((last - prev) / prev) * 100;
   }, [dataForChart]);
 
+  // Visual Y-domain for BSR (mirrors YAxis domain with 5% padding)
+  const [visMin, visMax] = useMemo(() => {
+    const xs = (dataForChart || []).map(r => Number(r.BSR)).filter(v => Number.isFinite(v) && v > 0);
+    if (!xs.length) return [1, 100000];
+    const mn = Math.max(1, Math.floor(Math.min(...xs) * 0.95));
+    const mx = Math.ceil(Math.max(...xs) * 1.05);
+    return [mn, Math.max(mn + 1, mx)];
+  }, [dataForChart]);
+
+  const ratioOf = useMemo(() => (v) => {
+    if (!Number.isFinite(v)) return null;
+    const r = (v - visMin) / (visMax - visMin);
+    return Math.max(0, Math.min(1, r));
+  }, [visMin, visMax]);
+
+  const bsrZoneColor = React.useCallback((v) => {
+    if (!(Number.isFinite(v))) return '#9ca3af';
+    if (v < 40000) return '#10b981'; // green
+    if (v <= 90000) return '#f59e0b'; // yellow
+    return '#ef4444'; // red
+  }, []);
+
+  const currZoneChipClass = useMemo(() => {
+    const v = Number(currentBSR);
+    if (!Number.isFinite(v)) return 'text-gray-300 bg-white/5 border-white/10';
+    if (v < 40000) return 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20';
+    if (v <= 90000) return 'text-yellow-300 bg-yellow-500/10 border-yellow-500/20';
+    return 'text-red-300 bg-red-500/10 border-red-500/20';
+  }, [currentBSR]);
+
+  const t1p = Math.round(((ratioOf(40000) ?? 0) * 100));
+  const t2p = Math.round(((ratioOf(90000) ?? 0) * 100));
+  const gradBarCss = `linear-gradient(to bottom, #10b981 0%, #10b981 ${t1p}%, #f59e0b ${t1p}%, #f59e0b ${t2p}%, #ef4444 ${t2p}%, #ef4444 100%)`;
+
+  const pMin = (ratioOf(displayMin) ?? 0) * 100;
+  const pMax = (ratioOf(displayMax) ?? 1) * 100;
+  const pCur = (ratioOf(currentBSR) ?? 0) * 100;
+
+  // Zone bands for background (within visible domain)
+  const zoneBands = useMemo(() => {
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const green = { y1: clamp(1, visMin, visMax), y2: clamp(40000, visMin, visMax) };
+    const yellow = { y1: clamp(40000, visMin, visMax), y2: clamp(90000, visMin, visMax) };
+    const red = { y1: clamp(90000, visMin, visMax), y2: visMax };
+    const ok = (seg) => Number.isFinite(seg.y1) && Number.isFinite(seg.y2) && seg.y2 > seg.y1;
+    return {
+      green: ok(green) ? green : null,
+      yellow: ok(yellow) ? yellow : null,
+      red: ok(red) ? red : null,
+    };
+  }, [visMin, visMax]);
+
+  // Zone-colored styles for current markers/lines
+  const currZone = bsrZoneColor(Number(currentBSR));
+  const currFill = useMemo(() => {
+    switch (currZone) {
+      case '#10b981': return 'rgba(16,185,129,0.35)'; // emerald
+      case '#f59e0b': return 'rgba(245,158,11,0.30)'; // amber
+      case '#ef4444': return 'rgba(239,68,68,0.30)'; // red
+      default: return 'rgba(156,163,175,0.30)'; // gray
+    }
+  }, [currZone]);
+  const currStroke = useMemo(() => {
+    switch (currZone) {
+      case '#10b981': return 'rgba(16,185,129,0.65)';
+      case '#f59e0b': return 'rgba(245,158,11,0.60)';
+      case '#ef4444': return 'rgba(239,68,68,0.60)';
+      default: return 'rgba(156,163,175,0.60)';
+    }
+  }, [currZone]);
+
+  const currOuterGlow = useMemo(() => {
+    switch (currZone) {
+      case '#10b981': return '0 0 12px rgba(16,185,129,0.22)';
+      case '#f59e0b': return '0 0 12px rgba(245,158,11,0.18)';
+      case '#ef4444': return '0 0 12px rgba(239,68,68,0.18)';
+      default: return '0 0 8px rgba(255,255,255,0.08)';
+    }
+  }, [currZone]);
+
+  const currZoneLabel = useMemo(() => {
+    const v = Number(currentBSR);
+    if (!Number.isFinite(v)) return null;
+    if (v < 40000) return 'Ottimo';
+    if (v <= 90000) return "Nella media";
+    return 'Critico';
+  }, [currentBSR]);
+
   // Custom dot: minimal chevron markers placed NEAR the line; pulsing halo only if neonMode
   const TrendArrowDot = (props) => {
     const { cx, cy, payload } = props || {};
     const t = payload?.BSRTrend;
     if (!cx || !cy || !t || t === 'flat') return null;
-    const color = t === 'up' ? '#ef4444' : '#fbbf24';
+    const color = t === 'up' ? '#ef4444' : '#10b981';
     // Recharts YAxis for BSR is reversed; screen goes DOWN when t === 'up' (worse), UP when t === 'down' (better)
     const reversedYAxis = true;
     const screenDown = reversedYAxis ? (t === 'up') : (t === 'down');
@@ -695,6 +783,9 @@ const AsinTrendChart = ({ asinData, onClose }) => {
             @keyframes shineMove { 0% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
             @keyframes beamPulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.8; } }
             @keyframes knobGlow { 0%, 100% { box-shadow: 0 0 12px rgba(255,255,255,0.35); } 50% { box-shadow: 0 0 18px rgba(255,255,255,0.7); } }
+            @keyframes sideBarShimmer { 0% { background-position: 0% 0%; } 50% { background-position: 0% 50%; } 100% { background-position: 0% 0%; } }
+            @keyframes breatheDot { 0% { transform: translateY(0) scale(1); } 50% { transform: translateY(-0.5px) scale(1.06); } 100% { transform: translateY(0) scale(1); } }
+            @media (prefers-reduced-motion: reduce) { .rm-reduce { animation: none !important; } }
           `}</style>
           <div className="flex justify-end items-center mb-2">
             <div className="flex items-center gap-1">
@@ -870,8 +961,13 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                         </div>
                       )}
                       {typeof bsrDelta7 === 'number' && isFinite(bsrDelta7) && (
-                        <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full border backdrop-blur font-medium ${bsrDelta7 > 0 ? 'text-red-300 bg-red-500/10 border-red-500/20' : 'text-yellow-300 bg-yellow-500/10 border-yellow-500/20'}`}>
+                        <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full border backdrop-blur font-medium ${bsrDelta7 > 0 ? 'text-red-300 bg-red-500/10 border-red-500/20' : 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20'}`}>
                           Δ7g {bsrDelta7 > 0 ? '+' : ''}{bsrDelta7.toFixed(1)}%
+                        </span>
+                      )}
+                      {Number.isFinite(currentBSR) && (
+                        <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full border backdrop-blur font-medium ${currZoneChipClass}`}>
+                          BSR {nfCompact.format(currentBSR)}
                         </span>
                       )}
                       <div className="flex items-center gap-2">
@@ -888,6 +984,71 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                         )}
                       </div>
                     </div>
+                  </div>
+                </div>
+                {/* Side performance bars: subtle gradient zones with min/current/max markers */}
+                <div aria-hidden className="absolute z-20 pointer-events-none" style={{ left: 6, top: chartTopMargin, bottom: chartBottomMargin, width: isMobile ? 4 : 6 }}>
+                  <div className="relative w-full h-full rounded-full border border-white/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] rm-reduce" style={{ background: gradBarCss, opacity: 0.92, backgroundSize: '100% 300%', WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 10px, black calc(100% - 10px), transparent)', maskImage: 'linear-gradient(to bottom, transparent, black 10px, black calc(100% - 10px), transparent)', animation: 'sideBarShimmer 18s ease-in-out infinite', boxShadow: currOuterGlow }}>
+                    {/* Threshold ticks at 40k and 90k */}
+                    <div className="absolute left-0 right-0" style={{ top: `${t1p}%` }}>
+                      <div className="mx-auto w-full h-px bg-white/25"></div>
+                    </div>
+                    <div className="absolute left-0 right-0" style={{ top: `${t2p}%` }}>
+                      <div className="mx-auto w-full h-px bg-white/20"></div>
+                    </div>
+                    {/* Tiny labels (desktop only) */}
+                    <div className="absolute hidden sm:block text-[9px] text-white/60" style={{ top: `${t1p}%`, left: 'calc(100% + 4px)', transform: 'translateY(-50%)' }}>40k</div>
+                    <div className="absolute hidden sm:block text-[9px] text-white/60" style={{ top: `${t2p}%`, left: 'calc(100% + 4px)', transform: 'translateY(-50%)' }}>90k</div>
+                    {Number.isFinite(pMin) && (
+                      <div className="absolute left-0 right-0" style={{ top: `${pMin}%` }}>
+                        <div className="mx-auto w-full h-px bg-white/35"></div>
+                      </div>
+                    )}
+                    {Number.isFinite(pCur) && (
+                      <div className="absolute left-0 right-0" style={{ top: `${pCur}%` }}>
+                        <div className="mx-auto w-2 h-2 rounded-full rm-reduce" style={{ background: bsrZoneColor(currentBSR), boxShadow: '0 0 0 1px rgba(255,255,255,0.35), 0 0 8px rgba(255,255,255,0.18)', animation: 'breatheDot 3.8s ease-in-out infinite' }}></div>
+                        {/* Zone label chip (desktop only) */}
+                        {currZoneLabel && (
+                          <div className="hidden sm:block absolute" style={{ right: 'calc(100% + 8px)', top: '50%', transform: 'translateY(-50%)' }}>
+                            <span className="px-1.5 py-0.5 rounded-full border text-[10px] backdrop-blur" style={{ color: bsrZoneColor(currentBSR), borderColor: 'rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.04)' }}>{currZoneLabel}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {Number.isFinite(pMax) && (
+                      <div className="absolute left-0 right-0" style={{ top: `${pMax}%` }}>
+                        <div className="mx-auto w-full h-px bg-white/35"></div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div aria-hidden className="absolute z-20 pointer-events-none" style={{ right: 6, top: chartTopMargin, bottom: chartBottomMargin, width: isMobile ? 4 : 6 }}>
+                  <div className="relative w-full h-full rounded-full border border-white/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] rm-reduce" style={{ background: gradBarCss, opacity: 0.92, backgroundSize: '100% 300%', WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 10px, black calc(100% - 10px), transparent)', maskImage: 'linear-gradient(to bottom, transparent, black 10px, black calc(100% - 10px), transparent)', animation: 'sideBarShimmer 18s ease-in-out infinite', boxShadow: currOuterGlow }}>
+                    {/* Threshold ticks at 40k and 90k */}
+                    <div className="absolute left-0 right-0" style={{ top: `${t1p}%` }}>
+                      <div className="mx-auto w-full h-px bg-white/25"></div>
+                    </div>
+                    <div className="absolute left-0 right-0" style={{ top: `${t2p}%` }}>
+                      <div className="mx-auto w-full h-px bg-white/20"></div>
+                    </div>
+                    {/* Tiny labels (desktop only) */}
+                    <div className="absolute hidden sm:block text-[9px] text-white/60" style={{ top: `${t1p}%`, right: 'calc(100% + 4px)', transform: 'translateY(-50%)' }}>40k</div>
+                    <div className="absolute hidden sm:block text-[9px] text-white/60" style={{ top: `${t2p}%`, right: 'calc(100% + 4px)', transform: 'translateY(-50%)' }}>90k</div>
+                    {Number.isFinite(pMin) && (
+                      <div className="absolute left-0 right-0" style={{ top: `${pMin}%` }}>
+                        <div className="mx-auto w-full h-px bg-white/35"></div>
+                      </div>
+                    )}
+                    {Number.isFinite(pCur) && (
+                      <div className="absolute left-0 right-0" style={{ top: `${pCur}%` }}>
+                        <div className="mx-auto w-2 h-2 rounded-full rm-reduce" style={{ background: bsrZoneColor(currentBSR), boxShadow: '0 0 0 1px rgba(255,255,255,0.35), 0 0 8px rgba(255,255,255,0.18)', animation: 'breatheDot 3.8s ease-in-out infinite' }}></div>
+                      </div>
+                    )}
+                    {Number.isFinite(pMax) && (
+                      <div className="absolute left-0 right-0" style={{ top: `${pMax}%` }}>
+                        <div className="mx-auto w-full h-px bg-white/35"></div>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <ResponsiveContainer width="100%" height="100%">
@@ -977,6 +1138,16 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                       </feMerge>
                     </filter>
                   </defs>
+                  {/* Faint zone bands behind data */}
+                  {zoneBands.green && (
+                    <ReferenceArea yAxisId="left" y1={zoneBands.green.y1} y2={zoneBands.green.y2} fill="rgba(16,185,129,0.06)" stroke={null} ifOverflow="extendDomain" />
+                  )}
+                  {zoneBands.yellow && (
+                    <ReferenceArea yAxisId="left" y1={zoneBands.yellow.y1} y2={zoneBands.yellow.y2} fill="rgba(245,158,11,0.045)" stroke={null} ifOverflow="extendDomain" />
+                  )}
+                  {zoneBands.red && (
+                    <ReferenceArea yAxisId="left" y1={zoneBands.red.y1} y2={zoneBands.red.y2} fill="rgba(239,68,68,0.04)" stroke={null} ifOverflow="extendDomain" />
+                  )}
                   {!isMobile && (<CartesianGrid strokeDasharray="2 6" stroke="rgba(255, 255, 255, 0.08)" />)}
                   <XAxis
                     dataKey="date"
@@ -1040,20 +1211,16 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                   {showPrice && (
                     <Line yAxisId="price" type="monotone" dataKey="Prezzo" stroke="url(#strokePRICE)" strokeOpacity={0.22} strokeWidth={isMobile ? 3 : 4.5} dot={false} activeDot={false} animationDuration={600} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" filter={neonMode ? 'url(#pulseLinePRICE)' : 'url(#glowPRICE)'} />
                   )}
-                  <Line yAxisId="left" type="monotone" dataKey="BSR" stroke="#34d399" strokeWidth={isMobile ? 1.6 : 2} dot={isMobile ? false : <TrendArrowDot />} activeDot={isMobile ? false : { r: 6 }} animationDuration={800} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" />
-                  {/* Color segments: red when BSR increases (worse), yellow when BSR decreases (better) */}
-                  {!isMobile && (
-                    <>
-                      <Line yAxisId="left" type="monotone" dataKey="BSR_UP" stroke="#ef4444" strokeOpacity={0.95} strokeWidth={2.6} dot={false} activeDot={false} connectNulls={false} legendType="none" isAnimationActive animationDuration={550} animationEasing="ease-out" strokeLinecap="round" strokeLinejoin="round" />
-                      <Line yAxisId="left" type="monotone" dataKey="BSR_DOWN" stroke="#fbbf24" strokeOpacity={0.95} strokeWidth={2.6} dot={false} activeDot={false} connectNulls={false} legendType="none" isAnimationActive animationDuration={550} animationEasing="ease-out" strokeLinecap="round" strokeLinejoin="round" />
-                    </>
-                  )}
+                  <Line yAxisId="left" type="monotone" dataKey="BSR" stroke="#34d399" strokeWidth={isMobile ? 1.3 : 2} dot={isMobile ? false : <TrendArrowDot />} activeDot={isMobile ? false : { r: 6 }} animationDuration={800} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" />
+                  {/* Color segments: red when BSR increases (worse), green when BSR decreases (better) */}
+                  <Line yAxisId="left" type="monotone" dataKey="BSR_UP" stroke="#ef4444" strokeOpacity={isMobile ? 0.9 : 0.95} strokeWidth={isMobile ? 1.4 : 2.6} dot={false} activeDot={false} connectNulls={false} legendType="none" isAnimationActive animationDuration={550} animationEasing="ease-out" strokeLinecap="round" strokeLinejoin="round" />
+                  <Line yAxisId="left" type="monotone" dataKey="BSR_DOWN" stroke="#10b981" strokeOpacity={isMobile ? 0.9 : 0.95} strokeWidth={isMobile ? 1.4 : 2.6} dot={false} activeDot={false} connectNulls={false} legendType="none" isAnimationActive animationDuration={550} animationEasing="ease-out" strokeLinecap="round" strokeLinejoin="round" />
                   <Line yAxisId="right" type="monotone" dataKey="Recensioni" stroke="#818cf8" strokeWidth={isMobile ? 1.4 : 2} dot={isMobile ? false : { r: 2 }} activeDot={isMobile ? false : { r: 6 }} animationDuration={700} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" />
                   {showPrice && (
                     <Line yAxisId="price" type="monotone" dataKey="Prezzo" stroke="#f59e0b" strokeWidth={isMobile ? 1.4 : 2} dot={isMobile ? false : { r: 2 }} activeDot={isMobile ? false : { r: 6 }} animationDuration={650} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" />
                   )}
                   {currentBSR != null && (
-                    <ReferenceLine yAxisId="left" y={currentBSR} stroke="rgba(52,211,153,0.35)" strokeWidth={isMobile ? 1 : 1.2} strokeDasharray="4 4" ifOverflow="extendDomain" label={!isMobile ? { value: 'Attuale', position: 'right', fill: 'rgba(255,255,255,0.75)', fontSize: 11 } : undefined} />
+                    <ReferenceLine yAxisId="left" y={currentBSR} stroke={currStroke} strokeWidth={isMobile ? 1 : 1.2} strokeDasharray="4 4" ifOverflow="extendDomain" label={!isMobile ? { value: 'Attuale', position: 'right', fill: 'rgba(255,255,255,0.75)', fontSize: 11 } : undefined} />
                   )}
                   {displayMin != null && (
                     <ReferenceLine yAxisId="left" y={displayMin} stroke="rgba(250,204,21,0.25)" strokeWidth={isMobile ? 1 : 1.2} strokeDasharray="3 3" ifOverflow="extendDomain" label={!isMobile ? { value: 'Migliore', position: 'right', fill: 'rgba(255,255,255,0.6)', fontSize: 10 } : undefined} />
@@ -1063,7 +1230,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                   )}
                   {/* Minimal left markers (dots) for Attuale/Migliore/Peggiore aligned to first X */}
                   {firstX && currentBSR != null && (
-                    <ReferenceDot yAxisId="left" x={firstX} y={currentBSR} r={3} fill="rgba(52,211,153,0.45)" stroke="rgba(52,211,153,0.75)" isFront />
+                    <ReferenceDot yAxisId="left" x={firstX} y={currentBSR} r={3} fill={currFill} stroke={currStroke} isFront />
                   )}
                   {firstX && displayMin != null && (
                     <ReferenceDot yAxisId="left" x={firstX} y={displayMin} r={3} fill="rgba(250,204,21,0.35)" stroke="rgba(250,204,21,0.7)" isFront />
