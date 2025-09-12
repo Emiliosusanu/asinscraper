@@ -825,11 +825,16 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                       </div>
                     </PopoverContent>
                   </Popover>
-                  {asinData?.is_bestseller && (
-                    <div className="ml-1">
-                      <BestsellerBadge micro />
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1 ml-1">
+                    <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(7) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(7)} onClick={() => setRangeDays(7)}>7g</Button>
+                    <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(30) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(30)} onClick={() => setRangeDays(30)}>30g</Button>
+                    <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(90) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(90)} onClick={() => setRangeDays(90)}>90g</Button>
+                    {asinData?.is_bestseller && (
+                      <div className="ml-1">
+                        <BestsellerBadge micro />
+                      </div>
+                    )}
+                  </div>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button size="xs" variant="outline" className={`${toggleBtnClass} px-2`} title="Informazioni sui controlli">

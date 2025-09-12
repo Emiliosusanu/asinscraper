@@ -91,20 +91,64 @@ const NotificationPet = () => {
   const today = new Date();
   const y = today.getFullYear();
   const m = today.getMonth();
+  const dayKey = fmtYMD(today);
   const payoutDate = computePayoutForMonth(y, m);
   const isPayoutDay = today.toDateString() === payoutDate.toDateString();
   const target = new Date(y, m - 2, 1);
   const targetKey = `${target.getFullYear()}-${pad2(target.getMonth()+1)}`;
   const [payoutTotal, setPayoutTotal] = React.useState(null);
   const [showBubble, setShowBubble] = React.useState(false);
-  const [quoteIdx, setQuoteIdx] = React.useState(0);
+  const [talkIdx, setTalkIdx] = React.useState(0);
+  const [quoteStep, setQuoteStep] = React.useState(0);
   const quotes = React.useMemo(() => [
     'La costanza batte il talento quando il talento non è costante.',
     'Un libro alla volta, un giorno alla volta.',
     'Numeri veri, risultati veri. Avanti tutta!',
     'Le piccole azioni quotidiane costruiscono grandi risultati.',
     'Continua a scrivere: il successo ama la disciplina.',
+    // 20+ business-focused quotes
+    'La strategia decide la direzione, l’esecuzione porta i risultati.',
+    'La velocità di apprendimento è il tuo vantaggio competitivo.',
+    'Il cashflow è ossigeno: proteggilo con disciplina.',
+    'Semplice scala meglio: riduci l’attrito, aumenta il valore.',
+    'Decidi in base ai dati, ispira con la visione.',
+    'I margini crescono dove c’è focus, non dove c’è caos.',
+    'Il mercato premia chi risolve problemi reali, meglio e prima.',
+    'Il brand è fiducia accumulata nel tempo.',
+    'Ripeti ciò che funziona, misura ciò che conta, taglia il resto.',
+    'Le abitudini quotidiane creano fatturato mensile.',
+    'Fai una cosa piccola ogni giorno: la traiettoria cambia.',
+    'Il prezzo racconta una storia: scegli tu quale.',
+    'Le vendite seguono l’attenzione. L’attenzione segue il valore.',
+    'Cicli brevi: testa, misura, itera, scala.',
+    'La qualità è una conseguenza di processi chiari.',
+    'Automatizza il ripetibile, concentra l’energia sul creativo.',
+    'Più vicino al cliente, più vicino alla soluzione.',
+    'La perseveranza trasforma gli esperimenti in sistemi.',
+    'Ogni ostacolo ben compreso è una feature del tuo vantaggio.',
+    'Eccellenza operativa oggi, crescita sostenibile domani.',
+    'Piccoli miglioramenti quotidiani compongono grandi risultati.',
+    'Una metrica alla volta: ciò che misuri migliora.',
+    'Crea domanda con contenuti, catturala con un’offerta chiara.',
+    'Team piccoli, responsabilità grandi, feedback veloci.',
   ], []);
+
+  // Daily shuffled order for payout quotes (no repeats until full cycle)
+  const quotesOrder = React.useMemo(() => {
+    const key = `petQuotesOrder:${dayKey}`;
+    try {
+      const raw = localStorage.getItem(key);
+      const arr = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(arr) && arr.length === quotes.length) return arr;
+    } catch (_) {}
+    const arr = Array.from({ length: quotes.length }, (_, i) => i);
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    try { localStorage.setItem(key, JSON.stringify(arr)); } catch (_) {}
+    return arr;
+  }, [dayKey, quotes.length]);
 
   // Dance controller and animation mode
   const animation = React.useMemo(() => {
@@ -260,15 +304,36 @@ const NotificationPet = () => {
 
   React.useEffect(() => {
     if (!isPayoutDay) return;
-    const id = setInterval(() => setQuoteIdx(i => (i + 1) % quotes.length), 300000); // 5 min
+    const id = setInterval(() => setQuoteStep(s => s + 1), 300000); // 5 min
     return () => clearInterval(id);
-  }, [isPayoutDay, quotes.length]);
+  }, [isPayoutDay]);
 
   // Ephemeral message scheduler on regular days: 10–15 random messages/day, 10–15s display, 10–15 min apart
   const timersRef = React.useRef({ show: null, hide: null });
   const clearTimers = React.useCallback(() => {
     if (timersRef.current.show) { clearTimeout(timersRef.current.show); timersRef.current.show = null; }
     if (timersRef.current.hide) { clearTimeout(timersRef.current.hide); timersRef.current.hide = null; }
+  }, []);
+
+  // Pick a unique index for the day; avoid repeats until pool exhausted
+  const pickUniqueIndex = React.useCallback((poolLen, storageKey, prev) => {
+    try {
+      let used = [];
+      try { used = JSON.parse(localStorage.getItem(storageKey)) || []; } catch (_) {}
+      let candidates = [];
+      for (let i = 0; i < poolLen; i++) if (!used.includes(i)) candidates.push(i);
+      if (candidates.length === 0) { used = []; candidates = Array.from({ length: poolLen }, (_, i) => i); }
+      let idx = candidates[Math.floor(Math.random() * candidates.length)];
+      if (idx === prev && candidates.length > 1) {
+        idx = candidates[(candidates.indexOf(idx) + 1) % candidates.length];
+      }
+      used.push(idx);
+      try { localStorage.setItem(storageKey, JSON.stringify(used)); } catch (_) {}
+      return idx;
+    } catch (_) {
+      // fallback random
+      return Math.floor(Math.random() * poolLen);
+    }
   }, []);
 
   const scheduleNextMessage = React.useCallback(() => {
@@ -280,13 +345,9 @@ const NotificationPet = () => {
     if (count >= 15) return; // daily cap
     const delay = 600000 + Math.floor(Math.random() * 300000); // 10–15 min
     timersRef.current.show = setTimeout(() => {
-      // pick a random message index, avoid immediate repeat
-      setQuoteIdx((prev) => {
-        if (talkPool.length <= 1) return 0;
-        let idx = Math.floor(Math.random() * talkPool.length);
-        if (idx === prev) idx = (idx + 1) % talkPool.length;
-        return idx;
-      });
+      // pick a unique message for the day
+      const usedKey = `petUsedTalk:${todayKey}`;
+      setTalkIdx((prev) => pickUniqueIndex(talkPool.length, usedKey, prev));
       setShowBubble(true);
       try { localStorage.setItem(`petMsgCount:${todayKey}`, String(count + 1)); } catch (_) {}
       const displayMs = 10000 + Math.floor(Math.random() * 5000); // 10–15s
@@ -295,7 +356,7 @@ const NotificationPet = () => {
         scheduleNextMessage(); // chain
       }, displayMs);
     }, delay);
-  }, [isPayoutDay, mtdEUR, talkPool.length]);
+  }, [isPayoutDay, mtdEUR, talkPool.length, pickUniqueIndex]);
 
   // Kick off scheduler when MTD becomes available and not payout day
   React.useEffect(() => {
@@ -304,8 +365,9 @@ const NotificationPet = () => {
     // initial gentle delay (3–6s) before first message
     const initialDelay = 3000 + Math.floor(Math.random() * 3000);
     timersRef.current.show = setTimeout(() => {
-      // immediate show first message, then schedule next
-      setQuoteIdx((prev) => (prev + 1) % (talkPool.length || 1));
+      // immediate unique message, then schedule next
+      const usedKey = `petUsedTalk:${dayKey}`;
+      setTalkIdx((prev) => pickUniqueIndex(talkPool.length, usedKey, prev));
       setShowBubble(true);
       const todayKey = fmtYMD(new Date());
       try {
@@ -319,7 +381,7 @@ const NotificationPet = () => {
       }, displayMs);
     }, initialDelay);
     return () => clearTimers();
-  }, [isPayoutDay, mtdEUR, talkPool.length, scheduleNextMessage, clearTimers]);
+  }, [isPayoutDay, mtdEUR, talkPool.length, scheduleNextMessage, clearTimers, pickUniqueIndex, dayKey]);
 
   // Show pet on payout day or when MTD message is available even without new notifications
   if (!shouldShow && !isPayoutDay && mtdEUR == null) return null;
@@ -353,7 +415,7 @@ const NotificationPet = () => {
               <p className="text-xs text-slate-300">Giorno di pagamento Amazon</p>
               <p className="text-sm font-semibold mt-1">{`Mese pagato: ${target.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}`}</p>
               <p className="text-sm mt-1">Totale: <span className="text-emerald-400 font-bold">{payoutTotal != null ? fmtEUR(payoutTotal) : '—'}</span></p>
-              <p className="text-xs text-slate-300 mt-2 italic">“{quotes[quoteIdx]}”</p>
+              <p className="text-xs text-slate-300 mt-2 italic">“{quotes[quotesOrder[(quoteStep % (quotesOrder.length || 1))] || 0]}”</p>
             </motion.div>
           )}
           {!isPayoutDay && showBubble && mtdEUR != null && (
@@ -370,7 +432,7 @@ const NotificationPet = () => {
               <p className="text-sm mt-1">Fino ad oggi: <span className="text-emerald-400 font-bold">{mtdEUR != null ? fmtEUR(mtdEUR) : '—'}</span></p>
               {(() => {
                 const pct = mtdEUR != null ? Math.min(100, Math.round((mtdEUR / GOAL) * 100)) : null;
-                const msgTemplate = talkPool[quoteIdx % talkPool.length] || '';
+                const msgTemplate = talkPool[talkIdx % talkPool.length] || '';
                 const msg = msgTemplate
                   .replace('{mtd}', mtdEUR != null ? fmtEUR(mtdEUR) : '—')
                   .replace('{goal}', fmtEUR(GOAL))

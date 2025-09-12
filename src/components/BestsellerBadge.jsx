@@ -1,17 +1,19 @@
 import React from 'react';
 import { Star } from 'lucide-react';
 
-const BestsellerBadge = ({ small = false, micro = false }) => {
+const BestsellerBadge = ({ small = false, micro = false, iconOnly = false }) => {
   const variant = micro ? 'micro' : (small ? 'small' : 'default');
-  const sizeText = variant === 'default'
+  const sizeText = iconOnly ? 'px-1.5 py-1' : (variant === 'default'
     ? 'text-[11px] px-2 py-[1.5px]'
     : variant === 'small'
       ? 'text-[10px] px-1.5 py-[1px]'
-      : 'text-[9px] px-1.5 py-px';
-  const iconSize = variant === 'default' ? 'w-3.5 h-3.5' : variant === 'small' ? 'w-3 h-3' : 'w-2.5 h-2.5';
-  const bodyClass = variant === 'micro'
-    ? 'bg-amber-500/12 text-amber-200 border border-amber-400/25'
-    : 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-white border border-white/10 shadow-md';
+      : 'text-[9px] px-1.5 py-px');
+  const iconSize = iconOnly ? 'w-3 h-3' : (variant === 'default' ? 'w-3.5 h-3.5' : variant === 'small' ? 'w-3 h-3' : 'w-2.5 h-2.5');
+  const bodyClass = iconOnly
+    ? 'bg-amber-400/20 text-amber-200 border border-amber-400/40'
+    : (variant === 'micro'
+      ? 'bg-amber-500/12 text-amber-200 border border-amber-400/25'
+      : 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-white border border-white/10 shadow-md');
 
   return (
     <div className="relative inline-flex items-center group">
@@ -35,11 +37,13 @@ const BestsellerBadge = ({ small = false, micro = false }) => {
         </div>
       )}
       {/* badge body */}
-      <div className={`relative rounded-full pointer-events-none flex items-center gap-1 ${bodyClass} ${sizeText}`}>
+      <div className={`relative rounded-full pointer-events-none flex items-center ${iconOnly ? '' : 'gap-1'} ${bodyClass} ${sizeText}`}>
         <Star className={`${iconSize}`} />
-        <span className={variant === 'micro' ? 'tracking-tight' : 'tracking-wide'}>{variant === 'micro' ? 'Bestseller' : '#1 Best Seller'}</span>
+        {!iconOnly && (
+          <span className={variant === 'micro' ? 'tracking-tight' : 'tracking-wide'}>{variant === 'micro' ? 'Bestseller' : '#1 Best Seller'}</span>
+        )}
         {/* shimmer overlay (disabled on micro) */}
-        {variant !== 'micro' && (
+        {!iconOnly && variant !== 'micro' && (
           <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-full">
             <div
               className="badge-anim absolute inset-y-0 -left-full w-1/2 bg-gradient-to-r from-transparent via-white/30 to-transparent opacity-40"
