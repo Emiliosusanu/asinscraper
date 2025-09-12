@@ -15,6 +15,36 @@ const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   },
 });
 
+async function runPostScrapeAnalytics(userId: string) {
+  try {
+    console.log(`[${new Date().toISOString()}] ▶️ Running compute_performance for user ${userId}`);
+    const { error: perfErr } = await supabaseAdmin.functions.invoke('compute_performance', {
+      body: { userId },
+    });
+    if (perfErr) console.error('compute_performance error', perfErr);
+  } catch (e) {
+    console.error('compute_performance invoke failed', e);
+  }
+  try {
+    console.log(`[${new Date().toISOString()}] ▶️ Running compute_baselines for user ${userId}`);
+    const { error: baseErr } = await supabaseAdmin.functions.invoke('compute_baselines', {
+      body: { userId },
+    });
+    if (baseErr) console.error('compute_baselines error', baseErr);
+  } catch (e) {
+    console.error('compute_baselines invoke failed', e);
+  }
+  try {
+    console.log(`[${new Date().toISOString()}] ▶️ Running generate_tips for user ${userId}`);
+    const { error: tipsErr } = await supabaseAdmin.functions.invoke('generate_tips', {
+      body: { userId },
+    });
+    if (tipsErr) console.error('generate_tips error', tipsErr);
+  } catch (e) {
+    console.error('generate_tips invoke failed', e);
+  }
+}
+
 const triggerScrapingForUser = async (userId: string) => {
   console.log(`[${new Date().toISOString()}] 🚀 Triggering scraping for user: ${userId}`);
 
@@ -72,6 +102,9 @@ const triggerScrapingForUser = async (userId: string) => {
   } else {
     console.log(`[${new Date().toISOString()}] Successfully updated last_scrape_at for user ${userId} after completing all scrapes.`);
   }
+
+  // Kick off analytics and tips generation (non-blocking)
+  await runPostScrapeAnalytics(userId);
 };
 
 const parseIntervalToHourly = (interval: string | null): number | null => {

@@ -1,7 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GlobalNotificationsBell from '@/components/GlobalNotificationsBell';
-import { HelpCircle } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
@@ -339,21 +338,7 @@ const NotificationPet = () => {
         title="Click me to dance!"
       >
         <GlobalNotificationsBell />
-        {/* Mini help action to open tutorial/changelog */}
-        <button
-          type="button"
-          aria-label="Apri tutorial"
-          onClick={(e) => {
-            e.stopPropagation();
-            try { window.dispatchEvent(new CustomEvent('openWelcomeModal', { detail: { suppressCount: true } })); }
-            catch (_) { window.dispatchEvent(new Event('openWelcomeModal')); }
-          }}
-          className="absolute inline-flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-indigo-600 to-fuchsia-600 text-white shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-white/30
-                     left-1/2 -translate-x-1/2 -bottom-3 sm:translate-x-0 sm:-left-2 sm:-bottom-2"
-          title="Apri tutorial e novità"
-        >
-          <HelpCircle className="w-5 h-5" />
-        </button>
+        {/* Help pill removed per request; access via Settings */}
         <AnimatePresence>
           {isPayoutDay && (
             <motion.div

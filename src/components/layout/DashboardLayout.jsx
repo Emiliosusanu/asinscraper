@@ -3,8 +3,11 @@ import Sidebar from '@/components/layout/Sidebar';
 import MobileNav from '@/components/layout/MobileNav';
 import NotificationPet from '@/components/NotificationPet';
 import WelcomeChangelogModal from '@/components/WelcomeChangelogModal';
+import useGlobalNotifications from '@/hooks/useGlobalNotifications';
 
 const DashboardLayout = ({ children }) => {
+  // Populate Pet notifications from performance_snapshots + notification_events
+  useGlobalNotifications();
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="flex">

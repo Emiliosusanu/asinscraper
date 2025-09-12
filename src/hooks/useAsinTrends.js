@@ -221,12 +221,26 @@ const useAsinTrends = (asins) => {
         drivers.push(priceDeltaPct > 0 ? 'Prezzo medio più alto' : 'Prezzo medio più basso');
       }
 
+      // Compute QI score from global BSR range (min best, max worst) and current BSR
+      const bsrVals = (allHistory || []).map((r) => Number(r.bsr)).filter((v) => Number.isFinite(v) && v > 0);
+      const minEver = bsrVals.length ? Math.min(...bsrVals) : null;
+      const maxEver = bsrVals.length ? Math.max(...bsrVals) : null;
+      const currBsr = (Number.isFinite(Number(asin.bsr)) && Number(asin.bsr) > 0)
+        ? Number(asin.bsr)
+        : (Number.isFinite(Number(current?.bsr)) && Number(current?.bsr) > 0 ? Number(current?.bsr) : null);
+      let qiScore = null;
+      if (Number.isFinite(minEver) && Number.isFinite(maxEver) && Number.isFinite(currBsr) && maxEver > minEver) {
+        const ratio = (maxEver - currBsr) / (maxEver - minEver);
+        qiScore = Math.round(Math.max(0, Math.min(1, ratio)) * 100);
+      }
+
       newTrends[asin.id] = {
         bsr: bsrTrend,
         reviews: reviewsTrend,
         income: incomeTrend,
         price: priceTrend,
         acos: acosTrend,
+        qi: { score: qiScore, min: minEver, max: maxEver, current: currBsr },
         summary: {
           items: summaryItems,
           moGuard,

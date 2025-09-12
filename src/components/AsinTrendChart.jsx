@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ReferenceLine, Brush } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ReferenceLine, ReferenceDot, Brush } from 'recharts';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Loader2, X, Wand2, AlertTriangle, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -593,6 +593,12 @@ const AsinTrendChart = ({ asinData, onClose }) => {
     return 'In calo';
   }, [bsrRangePos]);
 
+  // left-side minimal markers anchor: first X value in current data
+  const firstX = useMemo(() => {
+    const arr = dataForChart || [];
+    return arr.length ? arr[0]?.date : null;
+  }, [dataForChart]);
+
   // Tint for pulsing halo on the range marker
   const perfTint = useMemo(() => {
     switch (bsrPerfLabel) {
@@ -690,12 +696,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
             @keyframes beamPulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.8; } }
             @keyframes knobGlow { 0%, 100% { box-shadow: 0 0 12px rgba(255,255,255,0.35); } 50% { box-shadow: 0 0 18px rgba(255,255,255,0.7); } }
           `}</style>
-          <div className="flex justify-between items-center mb-2">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="text-white font-semibold truncate text-lg sm:text-xl md:text-2xl" title={asinData.title}>{asinData.title}</h2>
-              </div>
-            </div>
+          <div className="flex justify-end items-center mb-2">
             <div className="flex items-center gap-1">
               {isMobile ? (
                 <>
@@ -773,9 +774,6 @@ const AsinTrendChart = ({ asinData, onClose }) => {
           {/* BSR range bar (min..max ever) with current position */}
           {(displayMin != null && displayMax != null && currentBSR != null && bsrRangePos != null) && (
             <div className="mb-3 sm:mb-4 flex flex-col items-center">
-              <div className="text-[11px] sm:text-xs text-gray-300 mb-1">
-                Prestazioni BSR · <span className="text-emerald-300">migliore</span> ↔ <span className="text-red-300">peggiore</span>
-              </div>
               <div className="w-full max-w-md sm:max-w-lg">
                 <div className="relative h-3 rounded-full bg-gradient-to-r from-yellow-400/60 via-orange-400/60 to-red-500/60 border border-white/15 shadow-inner overflow-hidden">
                   {/* animated shimmer across the bar */}
@@ -785,6 +783,9 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                       style={{ width: '36%', background: 'linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.14) 50%, rgba(255,255,255,0) 100%)', animation: 'shineMove 2800ms linear infinite' }}
                     />
                   </div>
+                  {/* minimal end markers */}
+                  <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-white/60 border border-white/30 shadow-sm" />
+                  <span aria-hidden className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-white/60 border border-white/30 shadow-sm" />
                   <div
                     className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2"
                     style={{ left: `${(bsrRangePos * 100).toFixed(1)}%` }}
@@ -799,23 +800,6 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                       {/* main knob */}
                       <div className="h-4 w-4 rounded-full bg-white/90 border border-white/60" style={{ animation: 'knobGlow 2200ms ease-in-out infinite' }} />
                     </div>
-                  </div>
-                </div>
-                <div className="mt-1.5 flex items-center justify-between text-[11px] sm:text-xs text-gray-300">
-                  <div className="flex items-center gap-1">
-                    <span className="text-yellow-300">Migliore</span>
-                    <span className="opacity-80">BSR</span>
-                    <span className="text-gray-100 font-medium">{nfPlain.format(displayMin)}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="opacity-80">Attuale</span>
-                    <span className={`font-semibold ${bsrPerfLabel==='Migliore'?'text-yellow-300':bsrPerfLabel==='Peggiore'?'text-red-300':'text-gray-100'}`}>{nfPlain.format(currentBSR)}</span>
-                    <span className="text-gray-400">({bsrPerfLabel})</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="opacity-80">BSR</span>
-                    <span className="text-gray-100 font-medium">{nfPlain.format(displayMax)}</span>
-                    <span className="text-red-300">Peggiore</span>
                   </div>
                 </div>
               </div>
@@ -877,12 +861,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                 />
                 {/* Overlay bar (reserved space) */}
                 <div className="absolute inset-x-0 top-0 z-20 px-3 sm:px-4 pt-1">
-                  <div className="h-9 sm:h-10 flex items-center justify-between pointer-events-none">
-                    <div>
-                      <span className="text-[11px] sm:text-xs text-white/80 bg-white/10 px-2 py-0.5 rounded-full border border-white/15 backdrop-blur">
-                        Andamento storico
-                      </span>
-                    </div>
+                  <div className="h-9 sm:h-10 flex items-center justify-end pointer-events-none">
                     <div className="flex items-center gap-2">
                       {asinData?.is_bestseller && (
                         <div className="rounded-full bg-amber-400/10 px-2 py-0.5 border border-amber-300/30 backdrop-blur flex items-center gap-1 shadow-sm">
@@ -998,7 +977,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                       </feMerge>
                     </filter>
                   </defs>
-                  <CartesianGrid strokeDasharray="2 6" stroke="rgba(255, 255, 255, 0.08)" />
+                  {!isMobile && (<CartesianGrid strokeDasharray="2 6" stroke="rgba(255, 255, 255, 0.08)" />)}
                   <XAxis
                     dataKey="date"
                     stroke="rgba(255, 255, 255, 0.55)"
@@ -1050,33 +1029,47 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                     />
                   )}
                   <Tooltip content={<CustomTooltip currency={currency} />} cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 }} />
-                  <Area yAxisId="left" type="monotone" dataKey="BSR" stroke="none" fill="url(#gradBSR)" fillOpacity={0.18} isAnimationActive animationDuration={700} animationEasing="ease-out" />
-                  <Area yAxisId="right" type="monotone" dataKey="Recensioni" stroke="none" fill="url(#gradREV)" fillOpacity={0.1} isAnimationActive animationDuration={650} animationEasing="ease-out" />
+                  <Area yAxisId="left" type="monotone" dataKey="BSR" stroke="none" fill="url(#gradBSR)" fillOpacity={isMobile ? 0.12 : 0.18} isAnimationActive animationDuration={700} animationEasing="ease-out" />
+                  <Area yAxisId="right" type="monotone" dataKey="Recensioni" stroke="none" fill="url(#gradREV)" fillOpacity={isMobile ? 0.08 : 0.1} isAnimationActive animationDuration={650} animationEasing="ease-out" />
                   {showPrice && (
-                    <Area yAxisId="price" type="monotone" dataKey="Prezzo" stroke="none" fill="url(#gradPRICE)" fillOpacity={0.12} isAnimationActive animationDuration={600} animationEasing="ease-out" />
+                    <Area yAxisId="price" type="monotone" dataKey="Prezzo" stroke="none" fill="url(#gradPRICE)" fillOpacity={isMobile ? 0.1 : 0.12} isAnimationActive animationDuration={600} animationEasing="ease-out" />
                   )}
                   {/* glow underlines with animated pulsing filters (conditional by Neon mode) */}
-                  <Line yAxisId="left" type="monotone" dataKey="BSR" stroke="url(#strokeBSR)" strokeOpacity={0.3} strokeWidth={isMobile ? 6 : 5} dot={false} activeDot={false} animationDuration={650} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" filter={neonMode ? 'url(#pulseLineBSR)' : 'url(#glowBSR)'} />
-                  <Line yAxisId="right" type="monotone" dataKey="Recensioni" stroke="url(#strokeREV)" strokeOpacity={0.24} strokeWidth={isMobile ? 5 : 4.5} dot={false} activeDot={false} animationDuration={650} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" filter={neonMode ? 'url(#pulseLineREV)' : 'url(#glowREV)'} />
+                  <Line yAxisId="left" type="monotone" dataKey="BSR" stroke="url(#strokeBSR)" strokeOpacity={0.3} strokeWidth={isMobile ? 3.5 : 5} dot={false} activeDot={false} animationDuration={650} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" filter={neonMode ? 'url(#pulseLineBSR)' : 'url(#glowBSR)'} />
+                  <Line yAxisId="right" type="monotone" dataKey="Recensioni" stroke="url(#strokeREV)" strokeOpacity={0.24} strokeWidth={isMobile ? 3 : 4.5} dot={false} activeDot={false} animationDuration={650} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" filter={neonMode ? 'url(#pulseLineREV)' : 'url(#glowREV)'} />
                   {showPrice && (
-                    <Line yAxisId="price" type="monotone" dataKey="Prezzo" stroke="url(#strokePRICE)" strokeOpacity={0.22} strokeWidth={isMobile ? 5 : 4.5} dot={false} activeDot={false} animationDuration={600} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" filter={neonMode ? 'url(#pulseLinePRICE)' : 'url(#glowPRICE)'} />
+                    <Line yAxisId="price" type="monotone" dataKey="Prezzo" stroke="url(#strokePRICE)" strokeOpacity={0.22} strokeWidth={isMobile ? 3 : 4.5} dot={false} activeDot={false} animationDuration={600} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" filter={neonMode ? 'url(#pulseLinePRICE)' : 'url(#glowPRICE)'} />
                   )}
-                  <Line yAxisId="left" type="monotone" dataKey="BSR" stroke="#34d399" strokeWidth={isMobile ? 2.6 : 2.2} dot={<TrendArrowDot />} activeDot={{ r: isMobile ? 4.5 : 6 }} animationDuration={800} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" />
+                  <Line yAxisId="left" type="monotone" dataKey="BSR" stroke="#34d399" strokeWidth={isMobile ? 1.6 : 2} dot={isMobile ? false : <TrendArrowDot />} activeDot={isMobile ? false : { r: 6 }} animationDuration={800} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" />
                   {/* Color segments: red when BSR increases (worse), yellow when BSR decreases (better) */}
-                  <Line yAxisId="left" type="monotone" dataKey="BSR_UP" stroke="#ef4444" strokeOpacity={0.95} strokeWidth={isMobile ? 3 : 2.6} dot={false} activeDot={false} connectNulls={false} legendType="none" isAnimationActive animationDuration={550} animationEasing="ease-out" strokeLinecap="round" strokeLinejoin="round" />
-                  <Line yAxisId="left" type="monotone" dataKey="BSR_DOWN" stroke="#fbbf24" strokeOpacity={0.95} strokeWidth={isMobile ? 3 : 2.6} dot={false} activeDot={false} connectNulls={false} legendType="none" isAnimationActive animationDuration={550} animationEasing="ease-out" strokeLinecap="round" strokeLinejoin="round" />
-                  <Line yAxisId="right" type="monotone" dataKey="Recensioni" stroke="#818cf8" strokeWidth={isMobile ? 2.3 : 2} dot={{ r: isMobile ? 1.8 : 2 }} activeDot={{ r: isMobile ? 4.5 : 6 }} animationDuration={700} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" />
+                  {!isMobile && (
+                    <>
+                      <Line yAxisId="left" type="monotone" dataKey="BSR_UP" stroke="#ef4444" strokeOpacity={0.95} strokeWidth={2.6} dot={false} activeDot={false} connectNulls={false} legendType="none" isAnimationActive animationDuration={550} animationEasing="ease-out" strokeLinecap="round" strokeLinejoin="round" />
+                      <Line yAxisId="left" type="monotone" dataKey="BSR_DOWN" stroke="#fbbf24" strokeOpacity={0.95} strokeWidth={2.6} dot={false} activeDot={false} connectNulls={false} legendType="none" isAnimationActive animationDuration={550} animationEasing="ease-out" strokeLinecap="round" strokeLinejoin="round" />
+                    </>
+                  )}
+                  <Line yAxisId="right" type="monotone" dataKey="Recensioni" stroke="#818cf8" strokeWidth={isMobile ? 1.4 : 2} dot={isMobile ? false : { r: 2 }} activeDot={isMobile ? false : { r: 6 }} animationDuration={700} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" />
                   {showPrice && (
-                    <Line yAxisId="price" type="monotone" dataKey="Prezzo" stroke="#f59e0b" strokeWidth={isMobile ? 2.2 : 2} dot={{ r: isMobile ? 1.8 : 2 }} activeDot={{ r: isMobile ? 4.5 : 6 }} animationDuration={650} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" />
+                    <Line yAxisId="price" type="monotone" dataKey="Prezzo" stroke="#f59e0b" strokeWidth={isMobile ? 1.4 : 2} dot={isMobile ? false : { r: 2 }} activeDot={isMobile ? false : { r: 6 }} animationDuration={650} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" />
                   )}
                   {currentBSR != null && (
-                    <ReferenceLine yAxisId="left" y={currentBSR} stroke="rgba(52,211,153,0.35)" strokeDasharray="4 4" ifOverflow="extendDomain" label={!isMobile ? { value: 'Attuale', position: 'right', fill: 'rgba(255,255,255,0.75)', fontSize: 11 } : undefined} />
+                    <ReferenceLine yAxisId="left" y={currentBSR} stroke="rgba(52,211,153,0.35)" strokeWidth={isMobile ? 1 : 1.2} strokeDasharray="4 4" ifOverflow="extendDomain" label={!isMobile ? { value: 'Attuale', position: 'right', fill: 'rgba(255,255,255,0.75)', fontSize: 11 } : undefined} />
                   )}
                   {displayMin != null && (
-                    <ReferenceLine yAxisId="left" y={displayMin} stroke="rgba(250,204,21,0.25)" strokeDasharray="3 3" ifOverflow="extendDomain" label={!isMobile ? { value: 'Migliore', position: 'right', fill: 'rgba(255,255,255,0.6)', fontSize: 10 } : undefined} />
+                    <ReferenceLine yAxisId="left" y={displayMin} stroke="rgba(250,204,21,0.25)" strokeWidth={isMobile ? 1 : 1.2} strokeDasharray="3 3" ifOverflow="extendDomain" label={!isMobile ? { value: 'Migliore', position: 'right', fill: 'rgba(255,255,255,0.6)', fontSize: 10 } : undefined} />
                   )}
                   {displayMax != null && (
-                    <ReferenceLine yAxisId="left" y={displayMax} stroke="rgba(239,68,68,0.20)" strokeDasharray="3 3" ifOverflow="extendDomain" label={!isMobile ? { value: 'Peggiore', position: 'right', fill: 'rgba(255,255,255,0.6)', fontSize: 10 } : undefined} />
+                    <ReferenceLine yAxisId="left" y={displayMax} stroke="rgba(239,68,68,0.20)" strokeWidth={isMobile ? 1 : 1.2} strokeDasharray="3 3" ifOverflow="extendDomain" label={!isMobile ? { value: 'Peggiore', position: 'right', fill: 'rgba(255,255,255,0.6)', fontSize: 10 } : undefined} />
+                  )}
+                  {/* Minimal left markers (dots) for Attuale/Migliore/Peggiore aligned to first X */}
+                  {firstX && currentBSR != null && (
+                    <ReferenceDot yAxisId="left" x={firstX} y={currentBSR} r={3} fill="rgba(52,211,153,0.45)" stroke="rgba(52,211,153,0.75)" isFront />
+                  )}
+                  {firstX && displayMin != null && (
+                    <ReferenceDot yAxisId="left" x={firstX} y={displayMin} r={3} fill="rgba(250,204,21,0.35)" stroke="rgba(250,204,21,0.7)" isFront />
+                  )}
+                  {firstX && displayMax != null && (
+                    <ReferenceDot yAxisId="left" x={firstX} y={displayMax} r={3} fill="rgba(239,68,68,0.3)" stroke="rgba(239,68,68,0.7)" isFront />
                   )}
                   {!isMobile && (
                     <Brush dataKey="date" height={20} stroke="rgba(255,255,255,0.25)" travellerWidth={8} fill="rgba(255,255,255,0.03)" />

@@ -45,7 +45,7 @@ const CircularProgress = ({ progress, size = 32, thickness = 3, color, trackColo
           {label}
         </div>
       ) : null}
-      <style jsx>{`
+      <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
     </div>

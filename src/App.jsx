@@ -11,6 +11,7 @@ import PortfolioAnalysis from '@/pages/PortfolioAnalysis';
 import AnalysisTools from '@/pages/AnalysisTools';
 import MobileNav from '@/components/layout/MobileNav';
 import { SmartNotificationsProvider, SmartNotificationsDrawer, SmartNotificationsFab } from '@/components/SmartNotificationsDrawer';
+import Notifications from '@/pages/Notifications';
 
 // Emilio: Main App component, handles routing.
 function App() {
@@ -37,6 +38,7 @@ function App() {
                   <Route path="/" element={<AsinMonitoring />} />
                   <Route path="/bsr-performance" element={<PortfolioAnalysis />} />
                   <Route path="/analysis" element={<AnalysisTools />} />
+                  <Route path="/notifications" element={<Notifications />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="*" element={<Navigate to="/" />} />
                 </Routes>

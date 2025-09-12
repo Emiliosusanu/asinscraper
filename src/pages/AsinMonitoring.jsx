@@ -16,6 +16,7 @@ import AsinReviewsModal from '@/components/AsinReviewsModal';
 import AsinEventLogModal from '@/components/AsinEventLogModal';
 import useAsinTrends from '@/hooks/useAsinTrends';
 import useLocalStorage from '@/hooks/useLocalStorage';
+import usePerformanceSnapshots from '@/hooks/usePerformanceSnapshots';
 import { scrapeAndProcessAsin, deleteAsinAndHistory, processAllAsins } from '@/services/asinService';
 import {
   AlertDialog,
@@ -141,6 +142,7 @@ const AsinMonitoring = () => {
 
   
   const { trends, refreshTrends } = useAsinTrends(trackedAsins);
+  const perfByAsinId = usePerformanceSnapshots(trackedAsins);
   const channelRef = useRef(null); // current realtime channel
   const refreshTrendsRef = useRef(refreshTrends);
   const fetchTrackedAsinsRef = useRef(null);
@@ -297,6 +299,8 @@ useEffect(() => {
   };
   
   const handleRefreshSingle = async (asinToRefresh) => {
+    // Skip if already running
+    if (refreshingAsin === asinToRefresh.asin || inProgressAsins.has(asinToRefresh.asin)) return;
     setRefreshingAsin(asinToRefresh.asin);
     await scrapeAndProcessAsin(asinToRefresh.asin, asinToRefresh.country, user);
     setRefreshingAsin(null);
@@ -309,8 +313,15 @@ const handleRefreshAll = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     const userId = session.user.id;
 
-    // prendo TUTTI gli ASIN tracciati (non solo i filtrati a schermo)
-    const items = trackedAsins.map(a => ({ asin: a.asin, country: a.country }));
+    // prendo TUTTI gli ASIN tracciati (non solo i filtrati a schermo) e rimuovo duplicati asin+country
+    const seen = new Set();
+    const items = [];
+    for (const a of trackedAsins) {
+      const key = `${a.asin}:${a.country || 'com'}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push({ asin: a.asin, country: a.country });
+    }
 
     // mark all as in-progress for visuals
     setInProgressAsins(new Set(items.map(i => i.asin)));
@@ -319,34 +330,40 @@ const handleRefreshAll = async () => {
       {
         items,
         userId,
-        max: 6,         // **limite concorrenza** (3–5 è ok)
-        pauseMs: 900,   // **pausa tra batch**
+        max: 4,         // **limite concorrenza** (4 consigliato per evitare WORKER_LIMIT)
+        pauseMs: 1100,  // **pausa tra batch** leggermente maggiore
         baseDelay: 700, // **retry backoff**: 0.7s, ~1.4s, ~2.1s con jitter
-        retries: 3
+        retries: 3,
+        maxItemAttempts: 3,
+        untilSuccess: false,
       },
-      ({ asin, ok, error }) => {
-        if (!ok) console.warn('Scrape fallito', asin, error);
-        // unmark asin as completed
-        setInProgressAsins(prev => {
-          const next = new Set(prev);
-          next.delete(asin);
-          return next;
-        });
-        // gently scroll to the just-completed ASIN
-        try {
-          const now = Date.now();
-          if (now - (lastScrollTsRef.current || 0) < 400) {
-            // throttle to avoid jitter with fast completions
-            setTimeout(() => {
+      ({ asin, ok, error, final, retry, attempts }) => {
+        if (!ok) console.warn('Scrape fallito', asin, error, final ? '(final)' : retry ? `(retry cycle ${retry})` : '');
+        // mark as completed only when success or final failure
+        if (ok || final) {
+          setInProgressAsins(prev => {
+            const next = new Set(prev);
+            next.delete(asin);
+            return next;
+          });
+          // gently scroll to the just-completed ASIN (success or final)
+          try {
+            const now = Date.now();
+            if (now - (lastScrollTsRef.current || 0) < 400) {
+              setTimeout(() => {
+                const el = document.querySelector(`[data-asin="${asin}"]`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }, 400);
+            } else {
               const el = document.querySelector(`[data-asin="${asin}"]`);
               if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }, 400);
-          } else {
-            const el = document.querySelector(`[data-asin="${asin}"]`);
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            lastScrollTsRef.current = Date.now();
+          } catch (_) {}
+          if (final && error) {
+            toast({ title: 'Scrape fermato', description: `ASIN ${asin}: interrotto dopo tentativi multipli.`, variant: 'destructive' });
           }
-          lastScrollTsRef.current = Date.now();
-        } catch (_) {}
+        }
       }
     );
   } finally {
@@ -421,6 +438,7 @@ const handleRefreshAll = async () => {
                 <AsinCard 
                   data={item} 
                   trend={trends[item.id]}
+                  snapshot={perfByAsinId[item.id]}
                   onRefresh={handleRefreshSingle}
                   onDelete={confirmDelete}
                   onShowChart={() => setSelectedAsinForChart(item)}
@@ -439,6 +457,7 @@ const handleRefreshAll = async () => {
                 <AsinListItem
                   data={item}
                   trend={trends[item.id]}
+                  snapshot={perfByAsinId[item.id]}
                   onRefresh={handleRefreshSingle}
                   onDelete={confirmDelete}
                   onShowChart={() => setSelectedAsinForChart(item)}

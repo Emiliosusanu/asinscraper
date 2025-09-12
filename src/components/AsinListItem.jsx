@@ -7,7 +7,7 @@ import BestsellerBadge from '@/components/BestsellerBadge';
 import { calculateSalesFromBsr, calculateIncome } from '@/lib/incomeCalculator';
 import { estimateRoyalty } from '@/lib/royaltyEstimator';
 
-const AsinListItem = ({ data, trend, onRefresh, onDelete, onShowChart, onEditRoyalty, onShowReviews, onShowLogs, isRefreshing }) => {
+const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart, onEditRoyalty, onShowReviews, onShowLogs, isRefreshing }) => {
   const handleRefresh = (e) => {
     e.stopPropagation();
     onRefresh?.(data);
@@ -72,7 +72,22 @@ const AsinListItem = ({ data, trend, onRefresh, onDelete, onShowChart, onEditRoy
     return new Intl.NumberFormat('it-IT').format(num);
   };
 
-  const isAvailable = data.stock_status && (data.stock_status.toLowerCase().includes('in stock') || data.stock_status.toLowerCase().includes('disponibile'));
+  const stockStatus = (data.stock_status || '').toLowerCase();
+  const availableSoonRx = /(available to ship|usually ships|ships within|spedizione|disponibile tra|verfügbar|expédition sous|disponible en)/i;
+  const code = (data.availability_code || '').toUpperCase();
+  const isInStock = code === 'IN_STOCK' || /in stock/i.test(stockStatus);
+  const isAvailableSoon = code === 'AVAILABLE_SOON' || availableSoonRx.test(stockStatus);
+  // performance snapshot chips
+  const snapQi = typeof snapshot?.qi_score === 'number' ? snapshot.qi_score : null;
+  const snapMo = typeof snapshot?.momentum_7 === 'number' ? snapshot.momentum_7 : null;
+  const snapVol = typeof snapshot?.volatility_30 === 'number' ? snapshot.volatility_30 : null;
+  const qiClass = (s) => {
+    if (!(typeof s === 'number') || !isFinite(s)) return 'bg-white/5 text-white/70 border-white/10';
+    if (s >= 80) return 'bg-emerald-500/15 text-emerald-200 border-emerald-400/30';
+    if (s >= 60) return 'bg-lime-500/15 text-lime-200 border-lime-400/30';
+    if (s >= 40) return 'bg-amber-500/15 text-amber-200 border-amber-400/30';
+    return 'bg-rose-500/15 text-rose-200 border-rose-400/30';
+  };
   const sales = calculateSalesFromBsr(data.bsr);
   const effectiveRoyalty = (data.royalty && data.royalty > 0) ? data.royalty : estimateRoyalty(data);
   const income = calculateIncome(sales, effectiveRoyalty);
@@ -142,7 +157,11 @@ const AsinListItem = ({ data, trend, onRefresh, onDelete, onShowChart, onEditRoy
       />
       <a href={amazonLink} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 relative group/cover">
         <div className="relative w-12 h-16 sm:w-16 sm:h-24 rounded-md overflow-hidden ring-1 ring-white/10 transition-colors duration-200 md:group-hover/cover:ring-white/40">
-          {data.is_bestseller && <BestsellerBadge small={true} />}
+          {data.is_bestseller && (
+            <div className="absolute -left-1 -top-1 z-10">
+              <BestsellerBadge small={true} />
+            </div>
+          )}
           {/* elegant moving sheen */}
           <div aria-hidden="true" className="pointer-events-none absolute inset-0">
             <div className="absolute top-0 left-0 h-full w-2/3 -translate-x-[65%] md:group-hover/cover:translate-x-[180%] transition-transform duration-700 ease-in-out bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 blur-[0.5px]" />
@@ -155,10 +174,23 @@ const AsinListItem = ({ data, trend, onRefresh, onDelete, onShowChart, onEditRoy
         <div className="col-span-12 sm:col-span-3 min-w-0">
           <h3 className="font-semibold text-foreground text-sm sm:text-base line-clamp-2 sm:line-clamp-1">{data.title || 'Titolo non disponibile'}</h3>
           <p className="text-xs text-muted-foreground line-clamp-1">{data.author || 'Autore non disponibile'}</p>
-          <div className={`flex items-center gap-1.5 text-xs mt-1 ${isAvailable ? 'text-green-400' : 'text-orange-400'}`}>
-            {isAvailable ? <PackageCheck className="w-3 h-3" /> : <PackageX className="w-3 h-3" />}
+          <div className={`flex items-center gap-1.5 text-xs mt-1 ${isInStock ? 'text-green-400' : isAvailableSoon ? 'text-yellow-400' : 'text-orange-400'}`}>
+            {isInStock ? <PackageCheck className="w-3 h-3" /> : isAvailableSoon ? <Clock className="w-3 h-3" /> : <PackageX className="w-3 h-3" />}
             <span className="font-semibold truncate">{data.stock_status || 'Sconosciuto'}</span>
           </div>
+          {(snapQi != null || snapMo != null || snapVol != null) && (
+            <div className="flex items-center flex-wrap gap-1.5 mt-1">
+              {snapQi != null && (
+                <span className={`px-1.5 py-0.5 rounded-full border text-[10px] ${qiClass(snapQi)}`}>QI {snapQi}</span>
+              )}
+              {snapMo != null && (
+                <span className={`px-1.5 py-0.5 rounded-full border text-[10px] ${snapMo < -0.02 ? 'bg-emerald-500/15 text-emerald-200 border-emerald-400/30' : snapMo > 0.02 ? 'bg-rose-500/15 text-rose-200 border-rose-400/30' : 'bg-white/5 text-white/70 border-white/10'}`}>Mo {snapMo.toFixed(2)}</span>
+              )}
+              {snapVol != null && (
+                <span className={`px-1.5 py-0.5 rounded-full border text-[10px] ${snapVol < 0.12 ? 'bg-emerald-500/15 text-emerald-200 border-emerald-400/30' : snapVol > 0.25 ? 'bg-rose-500/15 text-rose-200 border-rose-400/30' : 'bg-amber-500/15 text-amber-200 border-amber-400/30'}`}>Vol {snapVol.toFixed(2)}</span>
+              )}
+            </div>
+          )}
           {/* Mobile chips summary */}
           <div className="sm:hidden flex flex-wrap gap-1.5 mt-2">
             <span className="inline-flex items-center gap-1 bg-muted/50 text-foreground px-2 py-1 rounded text-[11px]">{countryFlag} {(data.country || 'com').toUpperCase()}</span>
