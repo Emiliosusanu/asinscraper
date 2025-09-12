@@ -618,34 +618,26 @@ const AsinTrendChart = ({ asinData, onClose }) => {
   // 7-day BSR delta (%). Positive value = BSR increased (worse), negative = decreased (better)
   const bsrDelta7 = useMemo(() => {
     const arr = dataForChart || [];
-    if (!arr.length) return null;
-    // Find last valid BSR with a valid date
-    let lastIdx = -1;
+    if (arr.length < 8) return null;
+    // Find last valid BSR
+    let lastIdx = arr.length - 1;
+    let last = null;
     for (let i = arr.length - 1; i >= 0; i--) {
       const b = Number(arr[i]?.BSR);
-      const d = arr[i]?.date ? new Date(arr[i].date) : null;
-      if (Number.isFinite(b) && b > 0 && d && !isNaN(d.getTime())) { lastIdx = i; break; }
+      if (Number.isFinite(b) && b > 0) { last = b; lastIdx = i; break; }
     }
-    if (lastIdx < 0) return null;
-    const last = Number(arr[lastIdx].BSR);
-    const lastDate = new Date(arr[lastIdx].date);
-    const targetTime = lastDate.getTime() - 7 * 24 * 60 * 60 * 1000; // 7 calendar days earlier
-    // Find the closest valid sample to targetTime
-    let prevIdx = -1;
-    let bestDiff = Infinity;
+    if (last == null) return null;
+    // Find value ~7 points earlier (approx daily)
+    let prev = null;
+    let seen = 0;
     for (let j = lastIdx - 1; j >= 0; j--) {
-      const bj = Number(arr[j]?.BSR);
-      const djRaw = arr[j]?.date;
-      const dj = djRaw ? new Date(djRaw) : null;
-      if (!Number.isFinite(bj) || bj <= 0 || !dj || isNaN(dj.getTime())) continue;
-      const diff = Math.abs(dj.getTime() - targetTime);
-      if (diff < bestDiff) { bestDiff = diff; prevIdx = j; }
-      // Early exit if we've gone sufficiently past target and already have a close candidate
-      if (dj.getTime() < targetTime && bestDiff < (2 * 24 * 60 * 60 * 1000)) break;
+      const b = Number(arr[j]?.BSR);
+      if (Number.isFinite(b) && b > 0) {
+        seen++;
+        if (seen === 7) { prev = b; break; }
+      }
     }
-    if (prevIdx < 0) return null;
-    const prev = Number(arr[prevIdx].BSR);
-    if (!(Number.isFinite(prev) && prev > 0)) return null;
+    if (prev == null || prev <= 0) return null;
     return ((last - prev) / prev) * 100;
   }, [dataForChart]);
 

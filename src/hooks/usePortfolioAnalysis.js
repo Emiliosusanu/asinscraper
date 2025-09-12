@@ -42,7 +42,7 @@ const usePortfolioAnalysis = (periodInDays) => {
 
     const { data: asins, error: asinsError } = await supabase
       .from('asin_data')
-      .select('id, title, royalty')
+      .select('id, title, royalty, price, country, page_count, interior_type, trim_size, dimensions_raw, bsr')
       .eq('user_id', user.id);
 
     if (asinsError) {
@@ -141,7 +141,8 @@ const usePortfolioAnalysis = (periodInDays) => {
       const latestScrape = historyByAsin[asin.id]?.[historyByAsin[asin.id].length - 1];
       if (!latestScrape || !latestScrape.bsr) return total;
       const sales = calculateSalesFromBsr(latestScrape.bsr);
-      const income = calculateIncome(sales, asin.royalty);
+      const effectiveRoyalty = (asin.royalty && asin.royalty > 0) ? asin.royalty : estimateRoyalty(asin);
+      const income = calculateIncome(sales, effectiveRoyalty);
       return [total[0] + income.monthly[0], total[1] + income.monthly[1]];
     }, [0, 0]);
     
