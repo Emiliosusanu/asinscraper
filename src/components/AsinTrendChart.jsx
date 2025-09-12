@@ -798,10 +798,15 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                     <PopoverContent align="end" className="w-[94vw] max-w-[520px] bg-slate-900 border-slate-700 text-gray-100 p-3">
                       <div className="space-y-2 text-[12px]">
                         <div className="font-semibold text-gray-200">Periodo rapido</div>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(7) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(7)} onClick={() => setRangeDays(7)}>7g</Button>
                           <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(30) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(30)} onClick={() => setRangeDays(30)}>30g</Button>
                           <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(90) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(90)} onClick={() => setRangeDays(90)}>90g</Button>
+                          {asinData?.is_bestseller && (
+                            <div className="ml-1">
+                              <BestsellerBadge micro />
+                            </div>
+                          )}
                         </div>
                         <div className="font-semibold text-gray-200 pt-2">Filtri</div>
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -820,6 +825,11 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                       </div>
                     </PopoverContent>
                   </Popover>
+                  {asinData?.is_bestseller && (
+                    <div className="ml-1">
+                      <BestsellerBadge micro />
+                    </div>
+                  )}
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button size="xs" variant="outline" className={`${toggleBtnClass} px-2`} title="Informazioni sui controlli">
@@ -833,10 +843,15 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                 </>
               ) : (
                 <div className="hidden sm:flex items-center gap-2">
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(7) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(7)} onClick={() => setRangeDays(7)}>7g</Button>
                     <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(30) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(30)} onClick={() => setRangeDays(30)}>30g</Button>
                     <Button size="xs" variant="outline" className={`${quickBtnClass} ${isRangeActive(90) ? activeBtnClass : ''}`} aria-pressed={isRangeActive(90)} onClick={() => setRangeDays(90)}>90g</Button>
+                    {asinData?.is_bestseller && (
+                      <div className="ml-1">
+                        <BestsellerBadge micro />
+                      </div>
+                    )}
                   </div>
                   <div className="hidden sm:block min-w-[320px] md:min-w-[380px] lg:min-w-[460px]">
                     <div className="text-[12px]">
@@ -958,11 +973,6 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                 <div className="absolute inset-x-0 top-0 z-20 px-3 sm:px-4 pt-1">
                   <div className="h-9 sm:h-10 flex items-center justify-end pointer-events-none">
                     <div className="flex items-center gap-2">
-                      {asinData?.is_bestseller && (
-                        <div className="flex items-center">
-                          <BestsellerBadge micro />
-                        </div>
-                      )}
                       {typeof bsrDelta7 === 'number' && isFinite(bsrDelta7) && (
                         <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full border backdrop-blur font-medium ${bsrDelta7 > 0 ? 'text-red-300 bg-red-500/10 border-red-500/20' : 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20'}`}>
                           Δ7g {bsrDelta7 > 0 ? '+' : ''}{bsrDelta7.toFixed(1)}%
