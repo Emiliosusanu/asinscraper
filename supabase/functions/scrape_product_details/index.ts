@@ -543,9 +543,8 @@ serve(async (req) => {
         const availabilityUpdate: Record<string, any> = {};
         if (avail.text) availabilityUpdate.stock_status = avail.text;
         if (avail.code) availabilityUpdate.availability_code = avail.code;
-
-        // Build update object dynamically to avoid clearing fields when extraction fails
-        const updateData: Record<string, any> = {
+        // Build update payload; avoid erasing existing publication_date when not parsed
+        const updateObj: Record<string, any> = {
           page_count,
           dimensions_raw,
           trim_size,
@@ -559,11 +558,11 @@ serve(async (req) => {
           ...bestsellerUpdate,
           ...availabilityUpdate,
         };
-        if (publication_date) {
-          updateData.publication_date = publication_date;
-        }
-
-        await client.from("asin_data").update(updateData).eq("id", asinRow.id);
+        if (publication_date) updateObj.publication_date = publication_date;
+        await client
+          .from("asin_data")
+          .update(updateObj)
+          .eq("id", asinRow.id);
       } catch (_) {
         // Fallback if column doesn't exist yet
         await client
