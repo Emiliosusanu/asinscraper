@@ -64,12 +64,15 @@ const CustomTooltip = ({ active, payload, label }) => {
     return (
       <div className="glass-card p-4">
         <p className="text-muted-foreground mb-2">{formattedDate}</p>
-        {payload.map(pld => (
-          <div key={pld.dataKey} style={{ color: pld.color }} className="flex justify-between gap-4">
-            <span>{pld.name}:</span>
-            <span className="font-bold">{pld.value.toLocaleString('it-IT', { maximumFractionDigits: 0 })}</span>
-          </div>
-        ))}
+        {payload.map(pld => {
+          const v = Number.isFinite(pld?.value) ? pld.value : null;
+          return (
+            <div key={pld.dataKey} style={{ color: pld.color }} className="flex justify-between gap-4">
+              <span>{pld.name}:</span>
+              <span className="font-bold">{v != null ? v.toLocaleString('it-IT', { maximumFractionDigits: 0 }) : '—'}</span>
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -129,7 +132,7 @@ const PortfolioAnalysis = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
           <StatCard icon={Book} label="Libri Totali" value={stats.totalBooks} color="from-blue-500 to-cyan-500" />
-          <StatCard icon={DollarSign} label="Guadagno Mensile Stimato" value={stats.totalMonthlyIncome} trend={stats.portfolioIncomeTrend} formatFn={formatIncome} color="from-green-500 to-emerald-500" />
+          <StatCard icon={DollarSign} label="Entrate periodo (EUR)" value={stats.totalMonthlyIncome} trend={stats.portfolioIncomeTrend} formatFn={formatIncome} color="from-green-500 to-emerald-500" />
           <StatCard icon={TrendingUp} label="BSR Medio" value={stats.avgBsr.toLocaleString('it-IT')} trend={stats.portfolioBsrTrend} color="from-purple-500 to-pink-500" />
           <StatCard icon={Star} label="Recensioni Totali" value={stats.totalReviews.toLocaleString('it-IT')} color="from-yellow-500 to-orange-500" />
         </div>
@@ -152,11 +155,11 @@ const PortfolioAnalysis = () => {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                     <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" tickFormatter={(str) => new Date(str).toLocaleDateString('it-IT', {day: '2-digit', month: 'short'})} />
-                    <YAxis yAxisId="left" stroke="hsl(var(--primary))" orientation="left" label={{ value: 'Guadagno (€)', angle: -90, position: 'insideLeft', fill: 'hsl(var(--primary))', style: {textAnchor: 'middle'} }} tickFormatter={(val) => `€${val.toLocaleString()}`}/>
+                    <YAxis yAxisId="left" stroke="hsl(var(--primary))" orientation="left" label={{ value: 'Entrate (€)', angle: -90, position: 'insideLeft', fill: 'hsl(var(--primary))', style: {textAnchor: 'middle'} }} tickFormatter={(val) => `€${val.toLocaleString()}`}/>
                     <YAxis yAxisId="right" stroke="hsl(var(--secondary))" orientation="right" label={{ value: 'BSR Medio', angle: -90, position: 'insideRight', fill: 'hsl(var(--secondary))', style: {textAnchor: 'middle'} }} reversed={true} tickFormatter={(val) => val.toLocaleString()}/>
                     <Tooltip content={<CustomTooltip />} />
                     <Legend wrapperStyle={{ color: 'hsl(var(--foreground))', paddingTop: '20px' }} />
-                    <Area yAxisId="left" type="monotone" dataKey="totalMonthlyIncome" name="Guadagno Stimato" stroke="hsl(var(--primary))" strokeWidth={2} fillOpacity={1} fill="url(#colorIncome)" />
+                    <Area yAxisId="left" type="monotone" dataKey="totalMonthlyIncome" name="Entrate (EUR)" stroke="hsl(var(--primary))" strokeWidth={2} fillOpacity={1} fill="url(#colorIncome)" />
                     <Area yAxisId="right" type="monotone" dataKey="avgBsr" name="BSR Medio" stroke="hsl(var(--secondary))" strokeWidth={2} fillOpacity={1} fill="url(#colorBsr)" />
                 </AreaChart>
               </ResponsiveContainer>

@@ -53,6 +53,7 @@ const usePortfolioAnalysis = (periodInDays) => {
 
     const fromDate = new Date();
     fromDate.setDate(fromDate.getDate() - periodInDays);
+    const toDate = new Date();
     
     const { data: history, error: historyError } = await supabase
       .from('asin_history')
@@ -67,7 +68,23 @@ const usePortfolioAnalysis = (periodInDays) => {
       return;
     }
 
-    if (asins.length === 0 || history.length === 0) {
+    // Load real income entries (EUR only) for the same window
+    let entries = [];
+    try {
+      const { data: kdp, error: kdpErr } = await supabase
+        .from('kdp_entries')
+        .select('date, income, income_currency')
+        .eq('user_id', user.id)
+        .eq('income_currency', 'EUR')
+        .gte('date', fromDate.toISOString().slice(0,10))
+        .lte('date', toDate.toISOString().slice(0,10));
+      if (kdpErr) throw kdpErr;
+      entries = Array.isArray(kdp) ? kdp : [];
+    } catch (e) {
+      entries = [];
+    }
+
+    if (asins.length === 0 || (history.length === 0 && entries.length === 0)) {
         setData({
             stats: { totalBooks: asins.length, totalMonthlyIncome: [0,0], avgBsr: 0, totalReviews: 0, portfolioBsrTrend: 'stable', portfolioIncomeTrend: 'stable' },
             topPerformers: [],
@@ -114,21 +131,25 @@ const usePortfolioAnalysis = (periodInDays) => {
       (acc[date] = acc[date] || []).push(curr);
       return acc;
     }, {});
+
+    // Build daily income map from entries (EUR only)
+    const dailyIncomeEUR = entries.reduce((acc, r) => {
+      const d = (r.date || '').slice(0,10);
+      const inc = parseFloat(r.income ?? 0) || 0;
+      acc[d] = (acc[d] || 0) + inc;
+      return acc;
+    }, {});
     
-    const aggregatedHistory = Object.entries(historyByDate).map(([date, records]) => {
+    const allDates = Array.from(new Set([
+      ...Object.keys(historyByDate),
+      ...Object.keys(dailyIncomeEUR),
+    ]));
+    const aggregatedHistory = allDates.map((date) => {
+      const records = historyByDate[date] || [];
       const dailyBsrs = records.map(r => r.bsr).filter(Boolean);
-      const avgBsr = calculateAverage(dailyBsrs);
-      
-      const totalMonthlyIncome = records.reduce((total, record) => {
-        const asin = asins.find(a => a.id === record.asin_data_id);
-        if(!asin || !record.bsr) return total;
-        const sales = calculateSalesFromBsr(record.bsr);
-        const eff = (asin.royalty && asin.royalty > 0) ? asin.royalty : estimateRoyalty(asin);
-        const income = calculateIncome(sales, eff);
-        return [total[0] + income.monthly[0], total[1] + income.monthly[1]];
-      }, [0, 0]);
-      
-      return { date, avgBsr, totalMonthlyIncome: (totalMonthlyIncome[0] + totalMonthlyIncome[1])/2 };
+      const avgBsr = dailyBsrs.length ? calculateAverage(dailyBsrs) : null;
+      const incomeEUR = Number(dailyIncomeEUR[date] || 0);
+      return { date, avgBsr, totalMonthlyIncome: incomeEUR };
     }).sort((a, b) => new Date(a.date) - new Date(b.date));
 
     const latestHistoryRecords = Object.values(historyByAsin).map(h => h[h.length - 1]);
@@ -137,13 +158,9 @@ const usePortfolioAnalysis = (periodInDays) => {
     const avgBsr = allLatestBsrs.length > 0 ? Math.round(calculateAverage(allLatestBsrs)) : 0;
     const totalReviews = latestHistoryRecords.reduce((sum, h) => sum + (h.review_count || 0), 0);
     
-    const totalMonthlyIncome = asins.reduce((total, asin) => {
-      const latestScrape = historyByAsin[asin.id]?.[historyByAsin[asin.id].length - 1];
-      if (!latestScrape || !latestScrape.bsr) return total;
-      const sales = calculateSalesFromBsr(latestScrape.bsr);
-      const income = calculateIncome(sales, asin.royalty);
-      return [total[0] + income.monthly[0], total[1] + income.monthly[1]];
-    }, [0, 0]);
+    // Real income sum over period (EUR)
+    const sumIncomeEUR = Object.values(dailyIncomeEUR).reduce((a, b) => a + (b || 0), 0);
+    const totalMonthlyIncome = [sumIncomeEUR, sumIncomeEUR];
     
     let portfolioBsrTrend = 'stable';
     let portfolioIncomeTrend = 'stable';

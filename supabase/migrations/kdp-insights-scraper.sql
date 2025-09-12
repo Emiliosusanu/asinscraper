@@ -464,7 +464,7 @@ async function logAsinEvent(userId, asinDataId, eventType, description, metadata
           is_bestseller,
           bestseller_category: bestseller_category || undefined,
           page_count,
-          publication_date
+          ...(publication_date ? { publication_date } : {})
         };
         const { data: upsertedAsin, error: upsertError } = await supabaseAdmin.from("asin_data").upsert({
           user_id: userId,

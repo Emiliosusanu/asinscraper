@@ -64,6 +64,7 @@ const MarketAnalysis = () => {
   const [asins, setAsins] = useState([]);
   const [history, setHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [entries, setEntries] = useState([]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -80,6 +81,7 @@ const MarketAnalysis = () => {
         const asinIds = asinsData.map(a => a.id);
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const today = new Date();
 
         const { data: historyData, error: historyError } = await supabase
           .from('asin_history')
@@ -89,8 +91,25 @@ const MarketAnalysis = () => {
 
         if (historyError) throw historyError;
 
+        // Real income from kdp_entries (EUR) last 30 days
+        let kdp = [];
+        try {
+          const { data: kdpData, error: kdpErr } = await supabase
+            .from('kdp_entries')
+            .select('date, income, income_currency')
+            .eq('user_id', user.id)
+            .eq('income_currency', 'EUR')
+            .gte('date', thirtyDaysAgo.toISOString().slice(0,10))
+            .lte('date', today.toISOString().slice(0,10));
+          if (kdpErr) throw kdpErr;
+          kdp = Array.isArray(kdpData) ? kdpData : [];
+        } catch (_) {
+          kdp = [];
+        }
+
         setAsins(asinsData);
         setHistory(historyData);
+        setEntries(kdp);
       } catch (error) {
         toast({
           title: 'Errore nel caricamento dei dati',
@@ -106,14 +125,12 @@ const MarketAnalysis = () => {
   }, [user]);
 
   const analysisData = useMemo(() => {
-    if (asins.length === 0 || history.length === 0) {
+    if (asins.length === 0 && history.length === 0 && entries.length === 0) {
       return {
         topPerformers: [],
         worstPerformers: [],
         totalIncome: 0,
         bsrAverage: 0,
-        predictedIncome: 0,
-        predictedBsrChange: 0,
       };
     }
 
@@ -134,15 +151,19 @@ const MarketAnalysis = () => {
     const topPerformers = sortedByChange.slice(0, 3);
     const worstPerformers = sortedByChange.slice(-3).reverse();
 
-    const totalIncome = asins.reduce((acc, asin) => acc + (asin.royalty || 0), 0); // This is a placeholder
-    const bsrAverage = asins.reduce((acc, asin) => acc + (asin.bsr || 0), 0) / asins.length;
+    // Real income sum over last 30 days (EUR)
+    const totalIncome = (entries || []).reduce((sum, r) => sum + (parseFloat(r.income ?? 0) || 0), 0);
+    // Average latest BSR across portfolio
+    const latestByAsin = asins.map(a => {
+      const rel = history
+        .filter(h => h.asin_data_id === a.id)
+        .sort((x, y) => new Date(y.created_at) - new Date(x.created_at));
+      return rel[0]?.bsr || null;
+    }).filter(v => Number.isFinite(v));
+    const bsrAverage = latestByAsin.length ? Math.round(latestByAsin.reduce((a,b)=>a+b,0) / latestByAsin.length) : 0;
 
-    // AI Prediction Simulation
-    const predictedIncome = totalIncome * 1.15; // Simulate 15% increase
-    const predictedBsrChange = -50; // Simulate average BSR decrease
-
-    return { topPerformers, worstPerformers, totalIncome, bsrAverage, predictedIncome, predictedBsrChange };
-  }, [asins, history]);
+    return { topPerformers, worstPerformers, totalIncome, bsrAverage };
+  }, [asins, history, entries]);
 
   return (
     <>
@@ -163,16 +184,16 @@ const MarketAnalysis = () => {
             Stime & Analisi di Mercato
           </h1>
           <p className="mt-4 text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto">
-            Insight automatici e previsioni simulate basate sulle performance dei tuoi libri negli ultimi 30 giorni.
+            Insight automatici basati sui dati reali degli ultimi 30 giorni del tuo catalogo.
           </p>
         </motion.div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
             <AnalysisCard 
                 icon={DollarSign}
-                title="Guadagno Mensile Stimato"
+                title="Entrate 30 giorni (EUR)"
                 value={formatCurrency(analysisData.totalIncome)}
-                description="Basato sulle royalty impostate"
+                description="Somma dei ricavi (kdp_entries)"
                 color="text-green-400"
                 isLoading={isLoading}
             />
@@ -182,22 +203,6 @@ const MarketAnalysis = () => {
                 value={formatNumber(analysisData.bsrAverage)}
                 description="Media di tutti i tuoi libri"
                 color="text-purple-400"
-                isLoading={isLoading}
-            />
-            <AnalysisCard 
-                icon={BrainCircuit}
-                title="Previsione Guadagno Prossimo Mese"
-                value={formatCurrency(analysisData.predictedIncome)}
-                description="Simulazione AI"
-                color="text-cyan-400"
-                isLoading={isLoading}
-            />
-            <AnalysisCard 
-                icon={TrendingUp}
-                title="Previsione BSR Medio"
-                value={`${formatNumber(analysisData.predictedBsrChange)}`}
-                description="Variazione media stimata"
-                color="text-pink-400"
                 isLoading={isLoading}
             />
         </div>
@@ -229,13 +234,7 @@ const MarketAnalysis = () => {
             </div>
         </div>
         
-        <div className="mt-12 p-6 bg-blue-900/20 border border-blue-500/30 rounded-lg text-center">
-            <Info className="w-8 h-8 mx-auto text-blue-400 mb-3" />
-            <h3 className="text-lg font-semibold text-foreground">Disclaimer Simulazione AI</h3>
-            <p className="text-sm text-muted-foreground max-w-2xl mx-auto">
-                Le previsioni mostrate sono una simulazione dimostrativa. L'integrazione di un vero modello di intelligenza artificiale per analisi accurate può essere richiesta come prossima funzionalità.
-            </p>
-        </div>
+        {/* Removed simulation disclaimer: metrics are based on real data */}
 
       </div>
     </>
