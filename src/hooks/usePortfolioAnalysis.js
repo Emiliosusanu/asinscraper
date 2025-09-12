@@ -40,6 +40,7 @@ const usePortfolioAnalysis = (periodInDays) => {
     if (!user) return;
     setIsLoading(true);
 
+    // Now that the migration has been applied, fetch richer attributes for better royalty estimation
     const { data: asins, error: asinsError } = await supabase
       .from('asin_data')
       .select('id, title, royalty, price, country, page_count, interior_type, trim_size, dimensions_raw, bsr')
