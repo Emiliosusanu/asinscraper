@@ -133,25 +133,25 @@ const useAsinTrends = (asins) => {
       const period2 = allHistory.filter(h => new Date(h.created_at) >= d30); // last 30d
       const period1 = allHistory.filter(h => new Date(h.created_at) < d30 && new Date(h.created_at) >= d60); // prev 30d
       // Helpers for drivers/confidence
-      const avg = (arr) => (arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0);
+      const avg = (arr) => (arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null);
       const uniqueDates = (records) => Array.from(new Set(records.map(r => new Date(r.created_at).toISOString().split('T')[0])));
       const avgBsr = (records) => {
         const v = records.map(r => Number(r.bsr)).filter(x => Number.isFinite(x) && x > 0);
-        return v.length ? avg(v) : 0;
+        return v.length ? avg(v) : null;
       };
       const avgRoyalty = (records) => {
-        if (!records || records.length === 0) return 0;
+        if (!records || records.length === 0) return null;
         const vals = records.map(r => (
           (asin.royalty && asin.royalty > 0) ? asin.royalty : estimateRoyalty({ ...asin, price: (r.price ?? asin.price) })
         )).filter(Number.isFinite);
-        return vals.length ? avg(vals) : 0;
+        return vals.length ? avg(vals) : null;
       };
       const avgPrice = (records) => {
         const v = records.map(r => Number(r.price)).filter(x => Number.isFinite(x) && x > 0);
-        return v.length ? avg(v) : 0;
+        return v.length ? avg(v) : null;
       };
       const reviewVelocity = (records) => {
-        if (!records || records.length < 2) return 0;
+        if (!records || records.length < 2) return null;
         const last = records[0];
         const first = records[records.length - 1];
         const days = Math.max(1, Math.abs((new Date(last.created_at) - new Date(first.created_at)) / (1000*60*60*24)));
@@ -159,14 +159,14 @@ const useAsinTrends = (asins) => {
         return delta / days;
       };
       const avgMonthlyIncome = (records) => {
-        if (!records || records.length === 0) return 0;
+        if (!records || records.length === 0) return null;
         const vals = records.map(r => {
           const sales = calculateSalesFromBsr(r.bsr);
           const effR = (asin.royalty && asin.royalty > 0) ? asin.royalty : estimateRoyalty({ ...asin, price: (r.price ?? asin.price) });
           const inc = calculateIncome(sales, effR);
           return (inc.monthly[0] + inc.monthly[1]) / 2;
         }).filter(v => Number.isFinite(v));
-        if (vals.length === 0) return 0;
+        if (vals.length === 0) return null;
         return vals.reduce((a, b) => a + b, 0) / vals.length;
       };
       const m1 = avgMonthlyIncome(period1);
@@ -184,17 +184,17 @@ const useAsinTrends = (asins) => {
       let moGuard = 'stable';
       let moDeltaPct = null; // percent only when both periods > 0
       let moKind = 'flat';   // 'ratio' | 'new' | 'lost' | 'flat'
-      if (m1 > 0 && m2 > 0) {
+      if (Number.isFinite(m1) && m1 > 0 && Number.isFinite(m2) && m2 > 0) {
         moDeltaPct = ((m2 - m1) / m1) * 100;
         moKind = 'ratio';
         if (moDeltaPct >= 5) moGuard = 'better';
         else if (moDeltaPct <= -5) moGuard = 'worse';
         else moGuard = 'stable';
-      } else if (m2 > 0 && m1 === 0) {
+      } else if (Number.isFinite(m2) && m2 > 0 && (!Number.isFinite(m1) || m1 === 0)) {
         moGuard = 'better';
         moKind = 'new';
         moDeltaPct = null;
-      } else if (m1 > 0 && m2 === 0) {
+      } else if (Number.isFinite(m1) && m1 > 0 && (!Number.isFinite(m2) || m2 === 0)) {
         moGuard = 'worse';
         moKind = 'lost';
         moDeltaPct = null;
@@ -206,7 +206,7 @@ const useAsinTrends = (asins) => {
       const drivers = [];
       const pct = (a,b) => (b > 0 ? ((a-b)/b)*100 : 0);
       const bsrDeltaPct = pct(b2, b1);
-      const velDelta = v2 - v1;
+      const velDelta = (Number.isFinite(v1) && Number.isFinite(v2)) ? (v2 - v1) : null;
       const royaltyDeltaPct = pct(r2, r1);
       const priceDeltaPct = pct(p2, p1);
       if (Number.isFinite(b1) && Number.isFinite(b2) && Math.abs(bsrDeltaPct) >= 3) {
@@ -249,16 +249,16 @@ const useAsinTrends = (asins) => {
           drivers,
           confidence,
           stats: {
-            m1: Number.isFinite(m1) ? Number(m1.toFixed(2)) : 0,
-            m2: Number.isFinite(m2) ? Number(m2.toFixed(2)) : 0,
-            b1: Number.isFinite(b1) ? Math.round(b1) : 0,
-            b2: Number.isFinite(b2) ? Math.round(b2) : 0,
-            v1: Number.isFinite(v1) ? Number(v1.toFixed(2)) : 0,
-            v2: Number.isFinite(v2) ? Number(v2.toFixed(2)) : 0,
-            p1: Number.isFinite(p1) ? Number(p1.toFixed(2)) : 0,
-            p2: Number.isFinite(p2) ? Number(p2.toFixed(2)) : 0,
-            r1: Number.isFinite(r1) ? Number(r1.toFixed(2)) : 0,
-            r2: Number.isFinite(r2) ? Number(r2.toFixed(2)) : 0,
+            m1: Number.isFinite(m1) ? Number(m1.toFixed(2)) : null,
+            m2: Number.isFinite(m2) ? Number(m2.toFixed(2)) : null,
+            b1: Number.isFinite(b1) ? Math.round(b1) : null,
+            b2: Number.isFinite(b2) ? Math.round(b2) : null,
+            v1: Number.isFinite(v1) ? Number(v1.toFixed(2)) : null,
+            v2: Number.isFinite(v2) ? Number(v2.toFixed(2)) : null,
+            p1: Number.isFinite(p1) ? Number(p1.toFixed(2)) : null,
+            p2: Number.isFinite(p2) ? Number(p2.toFixed(2)) : null,
+            r1: Number.isFinite(r1) ? Number(r1.toFixed(2)) : null,
+            r2: Number.isFinite(r2) ? Number(r2.toFixed(2)) : null,
             coverageDays: coverageDays2,
             samples: { prev: period1.length, curr: period2.length },
           },

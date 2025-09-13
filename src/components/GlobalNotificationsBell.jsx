@@ -72,7 +72,11 @@ const GlobalNotificationsBell = () => {
   const sumPct = (arr) => arr.reduce((acc, d) => acc + (Number.isFinite(d.pct) ? clampPct(d.pct) : 0), 0);
   const netDelta = sumPct(better) - Math.abs(sumPct(worse));
   const netDeltaDisplay = clampPct(netDelta);
-  const sentimentLabel = netDelta > 0 ? 'Trend positivo' : netDelta < 0 ? 'Trend negativo' : 'Trend stabile';
+  // Fallback based on counts when pct is mostly unavailable (e.g., many 'new' items)
+  const countsImpact = ((counts.better - counts.worse) / Math.max(1, (counts.better + counts.worse))) * 100;
+  const useCountsFallback = netDeltaDisplay === 0 && (counts.better + counts.worse) > 0;
+  const netImpactDisplay = useCountsFallback ? countsImpact : netDeltaDisplay;
+  const sentimentLabel = netImpactDisplay > 0 ? 'Trend positivo' : netImpactDisplay < 0 ? 'Trend negativo' : 'Trend stabile';
   const updatedAt = payload?.ts ? new Date(payload.ts) : null;
   const timeAgo = (() => {
     if (!updatedAt) return '—';
@@ -168,7 +172,7 @@ const GlobalNotificationsBell = () => {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
               <p className="text-[11px] text-gray-400">Net Impact</p>
-              <p className={`text-sm font-semibold ${netDeltaDisplay >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{netDeltaDisplay.toFixed(1)}%</p>
+              <p className={`text-sm font-semibold ${netImpactDisplay >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{netImpactDisplay.toFixed(1)}%</p>
             </div>
             <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
               <p className="text-[11px] text-gray-400">Sentiment</p>
@@ -247,23 +251,23 @@ const GlobalNotificationsBell = () => {
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <p className="text-gray-400 text-[11px]">Guadagno stimato (medio)</p>
-                          <p>Precedente: ${Number(d.stats.m1 || 0).toFixed(2)}</p>
-                          <p>Corrente: ${Number(d.stats.m2 || 0).toFixed(2)}</p>
+                          <p>Precedente: {Number.isFinite(d?.stats?.m1) ? `$${Number(d.stats.m1).toFixed(2)}` : '—'}</p>
+                          <p>Corrente: {Number.isFinite(d?.stats?.m2) ? `$${Number(d.stats.m2).toFixed(2)}` : '—'}</p>
                         </div>
                         <div>
                           <p className="text-gray-400 text-[11px]">BSR medio</p>
-                          <p>Prec: {d.stats.b1 || 0}</p>
-                          <p>Corr: {d.stats.b2 || 0}</p>
+                          <p>Prec: {Number.isFinite(d?.stats?.b1) ? d.stats.b1 : '—'}</p>
+                          <p>Corr: {Number.isFinite(d?.stats?.b2) ? d.stats.b2 : '—'}</p>
                         </div>
                         <div>
                           <p className="text-gray-400 text-[11px]">Velocità recensioni (al g)</p>
-                          <p>Prec: {Number(d.stats.v1 || 0).toFixed(2)}</p>
-                          <p>Corr: {Number(d.stats.v2 || 0).toFixed(2)}</p>
+                          <p>Prec: {Number.isFinite(d?.stats?.v1) ? Number(d.stats.v1).toFixed(2) : '—'}</p>
+                          <p>Corr: {Number.isFinite(d?.stats?.v2) ? Number(d.stats.v2).toFixed(2) : '—'}</p>
                         </div>
                         <div>
                           <p className="text-gray-400 text-[11px]">Prezzo medio / Royalty media</p>
-                          <p>${Number(d.stats.p1 || 0).toFixed(2)} → ${Number(d.stats.p2 || 0).toFixed(2)}</p>
-                          <p>${Number(d.stats.r1 || 0).toFixed(2)} → ${Number(d.stats.r2 || 0).toFixed(2)}</p>
+                          <p>{Number.isFinite(d?.stats?.p1) ? `$${Number(d.stats.p1).toFixed(2)}` : '—'} → {Number.isFinite(d?.stats?.p2) ? `$${Number(d.stats.p2).toFixed(2)}` : '—'}</p>
+                          <p>{Number.isFinite(d?.stats?.r1) ? `$${Number(d.stats.r1).toFixed(2)}` : '—'} → {Number.isFinite(d?.stats?.r2) ? `$${Number(d.stats.r2).toFixed(2)}` : '—'}</p>
                         </div>
                       </div>
                       <div className="mt-2 text-[11px] text-gray-400">Copertura: {d.stats.coverageDays || 0} giorni • Campioni: prev {d.stats.samples?.prev || 0}, curr {d.stats.samples?.curr || 0}</div>
@@ -304,23 +308,23 @@ const GlobalNotificationsBell = () => {
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <p className="text-gray-400 text-[11px]">Guadagno stimato (medio)</p>
-                          <p>Precedente: ${Number(d.stats.m1 || 0).toFixed(2)}</p>
-                          <p>Corrente: ${Number(d.stats.m2 || 0).toFixed(2)}</p>
+                          <p>Precedente: {Number.isFinite(d?.stats?.m1) ? `$${Number(d.stats.m1).toFixed(2)}` : '—'}</p>
+                          <p>Corrente: {Number.isFinite(d?.stats?.m2) ? `$${Number(d.stats.m2).toFixed(2)}` : '—'}</p>
                         </div>
                         <div>
                           <p className="text-gray-400 text-[11px]">BSR medio</p>
-                          <p>Prec: {d.stats.b1 || 0}</p>
-                          <p>Corr: {d.stats.b2 || 0}</p>
+                          <p>Prec: {Number.isFinite(d?.stats?.b1) ? d.stats.b1 : '—'}</p>
+                          <p>Corr: {Number.isFinite(d?.stats?.b2) ? d.stats.b2 : '—'}</p>
                         </div>
                         <div>
                           <p className="text-gray-400 text-[11px]">Velocità recensioni (al g)</p>
-                          <p>Prec: {Number(d.stats.v1 || 0).toFixed(2)}</p>
-                          <p>Corr: {Number(d.stats.v2 || 0).toFixed(2)}</p>
+                          <p>Prec: {Number.isFinite(d?.stats?.v1) ? Number(d.stats.v1).toFixed(2) : '—'}</p>
+                          <p>Corr: {Number.isFinite(d?.stats?.v2) ? Number(d.stats.v2).toFixed(2) : '—'}</p>
                         </div>
                         <div>
                           <p className="text-gray-400 text-[11px]">Prezzo medio / Royalty media</p>
-                          <p>${Number(d.stats.p1 || 0).toFixed(2)} → ${Number(d.stats.p2 || 0).toFixed(2)}</p>
-                          <p>${Number(d.stats.r1 || 0).toFixed(2)} → ${Number(d.stats.r2 || 0).toFixed(2)}</p>
+                          <p>{Number.isFinite(d?.stats?.p1) ? `$${Number(d.stats.p1).toFixed(2)}` : '—'} → {Number.isFinite(d?.stats?.p2) ? `$${Number(d.stats.p2).toFixed(2)}` : '—'}</p>
+                          <p>{Number.isFinite(d?.stats?.r1) ? `$${Number(d.stats.r1).toFixed(2)}` : '—'} → {Number.isFinite(d?.stats?.r2) ? `$${Number(d.stats.r2).toFixed(2)}` : '—'}</p>
                         </div>
                       </div>
                       <div className="mt-2 text-[11px] text-gray-400">Copertura: {d.stats.coverageDays || 0} giorni • Campioni: prev {d.stats.samples?.prev || 0}, curr {d.stats.samples?.curr || 0}</div>

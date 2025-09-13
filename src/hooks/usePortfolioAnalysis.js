@@ -22,6 +22,12 @@ const usePortfolioAnalysis = (periodInDays) => {
   const [isLoading, setIsLoading] = useState(true);
 
   const calculateAverage = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+  const calculateMedian = (arr) => {
+    const v = (arr || []).filter((n) => Number.isFinite(n)).slice().sort((a,b)=>a-b);
+    if (!v.length) return null;
+    const mid = Math.floor(v.length / 2);
+    return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+  };
   
   const calculateTrend = (current, previous, lowerIsBetter = false) => {
     if (previous === null || current === null || current === previous || previous === 0) {
@@ -146,11 +152,32 @@ const usePortfolioAnalysis = (periodInDays) => {
     ]));
     const aggregatedHistory = allDates.map((date) => {
       const records = historyByDate[date] || [];
-      const dailyBsrs = records.map(r => r.bsr).filter(Boolean);
-      const avgBsr = dailyBsrs.length ? calculateAverage(dailyBsrs) : null;
+      const dailyBsrs = records.map(r => Number(r.bsr)).filter((x) => Number.isFinite(x) && x > 0);
+      const medianBsr = calculateMedian(dailyBsrs);
       const incomeEUR = Number(dailyIncomeEUR[date] || 0);
-      return { date, avgBsr, totalMonthlyIncome: incomeEUR };
+      return { date, avgBsr: medianBsr, totalMonthlyIncome: incomeEUR };
     }).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Carry-forward last known BSR to fill gaps for a smoother portfolio line
+    let lastBsr = null;
+    const filledHistory = aggregatedHistory.map((p) => {
+      const v = Number.isFinite(p.avgBsr) ? p.avgBsr : null;
+      if (v != null) {
+        lastBsr = v;
+        return p;
+      }
+      return { ...p, avgBsr: lastBsr }; // may remain null until first non-null encountered
+    });
+
+    // Apply 3-point smoothing (simple moving average) on BSR
+    const smoothedHistory = filledHistory.map((p, i, arr) => {
+      const a = arr[i - 1]?.avgBsr;
+      const b = arr[i]?.avgBsr;
+      const c = arr[i + 1]?.avgBsr;
+      const vals = [a, b, c].filter((x) => Number.isFinite(x));
+      const sm = vals.length ? calculateAverage(vals) : null;
+      return { ...p, avgBsr: sm };
+    });
 
     const latestHistoryRecords = Object.values(historyByAsin).map(h => h[h.length - 1]);
     const totalBooks = asins.length;
@@ -164,18 +191,28 @@ const usePortfolioAnalysis = (periodInDays) => {
     
     let portfolioBsrTrend = 'stable';
     let portfolioIncomeTrend = 'stable';
-    if(aggregatedHistory.length >= 2) {
-      const latestPoint = aggregatedHistory[aggregatedHistory.length - 1];
-      const previousPoint = aggregatedHistory[0];
-      portfolioBsrTrend = calculateTrend(latestPoint.avgBsr, previousPoint.avgBsr, true);
-      portfolioIncomeTrend = calculateTrend(latestPoint.totalMonthlyIncome, previousPoint.totalMonthlyIncome);
+    if(smoothedHistory.length >= 2) {
+      // Use last two numeric BSR points for a realistic trend
+      const numericIdx = smoothedHistory
+        .map((p, idx) => ({ idx, v: Number.isFinite(p.avgBsr) ? p.avgBsr : null }))
+        .filter((o) => o.v != null)
+        .map(o => o.idx);
+      if (numericIdx.length >= 2) {
+        const i2 = numericIdx[numericIdx.length - 1];
+        const i1 = numericIdx[numericIdx.length - 2];
+        portfolioBsrTrend = calculateTrend(smoothedHistory[i2].avgBsr, smoothedHistory[i1].avgBsr, true);
+      }
+      // Income trend from first to last (income can be zero legitimately)
+      const latestPoint = smoothedHistory[smoothedHistory.length - 1];
+      const firstPoint = smoothedHistory[0];
+      portfolioIncomeTrend = calculateTrend(latestPoint.totalMonthlyIncome, firstPoint.totalMonthlyIncome);
     }
 
     setData({
       stats: { totalBooks, totalMonthlyIncome, avgBsr, totalReviews, portfolioBsrTrend, portfolioIncomeTrend },
       topPerformers,
       worstPerformers,
-      history: aggregatedHistory,
+      history: smoothedHistory,
     });
     setIsLoading(false);
   }, [user, periodInDays]);

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Target, TrendingUp, AlertTriangle, BarChart2, Lightbulb, Gauge, Layers3, Focus, Waypoints, BadgePercent, Clock, Info } from 'lucide-react';
+import { Target, TrendingUp, AlertTriangle, BarChart2, Lightbulb, Gauge, Layers3, Focus, Waypoints, BadgePercent, Clock, Info, Search, Clipboard } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { estimateRoyalty } from '@/lib/royaltyEstimator';
 
@@ -36,6 +36,8 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
   const [budgetUsd, setBudgetUsd] = React.useState(300);
   const [horizonDays, setHorizonDays] = React.useState(30);
   const [scenario, setScenario] = React.useState('bilanciato'); // conservativo | bilanciato | aggressivo
+  // Channel enable toggles (focus SP by default as requested)
+  const [channelsEnabled, setChannelsEnabled] = React.useState({ sp: true, sb: false, sd: false });
   const splitsByScenario = {
     conservativo: { sp: 0.75, sb: 0.15, sd: 0.10, spInner: { auto: 0.20, broad: 0.30, exact: 0.50 } },
     bilanciato:   { sp: 0.60, sb: 0.25, sd: 0.15, spInner: { auto: 0.30, broad: 0.30, exact: 0.40 } },
@@ -43,9 +45,19 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
   };
   const splits = splitsByScenario[scenario] || splitsByScenario.bilanciato;
   const dailyTotal = budgetUsd && horizonDays ? (Math.max(0, Number(budgetUsd)) / Math.max(1, Number(horizonDays))) : 0; // USD
-  const spDaily = dailyTotal * splits.sp;
-  const sbDaily = dailyTotal * splits.sb;
-  const sdDaily = dailyTotal * splits.sd;
+  // Normalize channel shares to enabled channels
+  const baseShares = { sp: splits.sp, sb: splits.sb, sd: splits.sd };
+  const enabledSum = (channelsEnabled.sp ? baseShares.sp : 0)
+                   + (channelsEnabled.sb ? baseShares.sb : 0)
+                   + (channelsEnabled.sd ? baseShares.sd : 0) || 1;
+  const share = {
+    sp: channelsEnabled.sp ? (baseShares.sp / enabledSum) : 0,
+    sb: channelsEnabled.sb ? (baseShares.sb / enabledSum) : 0,
+    sd: channelsEnabled.sd ? (baseShares.sd / enabledSum) : 0,
+  };
+  const spDaily = dailyTotal * share.sp;
+  const sbDaily = dailyTotal * share.sb;
+  const sdDaily = dailyTotal * share.sd;
   const spAutoDaily  = spDaily * splits.spInner.auto;
   const spBroadDaily = spDaily * splits.spInner.broad;
   const spExactDaily = spDaily * splits.spInner.exact;
@@ -78,6 +90,9 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
           if (typeof p.horizonDays === 'number') setHorizonDays(p.horizonDays);
           if (typeof p.scenario === 'string') setScenario(p.scenario);
           if (typeof p.kdpPreset === 'string') setKdpPreset(p.kdpPreset);
+          if (p.channelsEnabled && typeof p.channelsEnabled === 'object') setChannelsEnabled({
+            sp: !!p.channelsEnabled.sp, sb: !!p.channelsEnabled.sb, sd: !!p.channelsEnabled.sd,
+          });
         }
       }
     } catch (_) {}
@@ -96,6 +111,7 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
         horizonDays,
         scenario,
         kdpPreset,
+        channelsEnabled,
       };
       localStorage.setItem(`acosGuidePrefs:${asin}`, JSON.stringify(prefs));
     } catch (_) {}
@@ -110,6 +126,9 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
   const bidAuto  = calcCpc != null ? Math.max(0, calcCpc * 0.90) : null;
   const bidBroad = calcCpc != null ? Math.max(0, calcCpc * 0.85) : null;
   const bidExact = calcCpc != null ? Math.max(0, calcCpc * 1.10) : null;
+  // Product targeting (ASIN) suggestions based on the same CPC logic
+  const bidAsinExpanded = calcCpc != null ? Math.max(0, calcCpc * 0.85) : null; // category/expanded
+  const bidAsinExact    = calcCpc != null ? Math.max(0, calcCpc * 1.10) : null; // specific ASINs
 
   // Helpers and Forecasts
   const fmt = (n, d = 2) => (Number.isFinite(n) ? n.toFixed(d) : '—');
@@ -126,6 +145,124 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
   const dailyProfit = dailyOrders * effectiveRoyalty - dailyTotal;
   const dailyRoas = dailyTotal > 0 ? (dailySalesVal / dailyTotal) : null;
   const dailyCpa = dailyOrders > 0 ? (dailyTotal / dailyOrders) : null;
+
+  // Starter-pack Keywords from Title/Subtitle
+  const subTitle = asinData?.subtitle || asinData?.sub_title || asinData?.subTitle || '';
+  const rawTitle = (asinData?.title || '').trim();
+  const baseTextRaw = (rawTitle || subTitle || 'Cooking as Therapy?').trim();
+  const sanitize = (s) => String(s).toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const titleSan = sanitize(baseTextRaw);
+  const words = titleSan.split(' ').filter(Boolean);
+  const basePhrase = words.join(' ');
+  const dedupe = (arr) => Array.from(new Set(arr.map((x) => x.trim()).filter(Boolean)));
+  const cap = (s) => s.length ? s[0].toUpperCase() + s.slice(1) : s;
+  const pretty = (s) => cap(s.replace(/\s+/g, ' '));
+  const buildKeywords = () => {
+    const kwsExact = [];
+    const kwsPhrase = [];
+    const kwsBroad = [];
+    // Generic base
+    if (basePhrase) {
+      kwsExact.push(basePhrase);
+      kwsExact.push(`${basePhrase} book`);
+      kwsExact.push(`${basePhrase} guide`);
+      kwsPhrase.push(`best ${basePhrase}`);
+      kwsPhrase.push(`${basePhrase} for beginners`);
+      kwsPhrase.push(`${basePhrase} for adults`);
+      kwsPhrase.push(`${basePhrase} ideas`);
+      // Broad seeds from words
+      for (let i = 0; i < words.length - 1; i++) {
+        kwsBroad.push(`${words[i]} ${words[i+1]}`);
+      }
+    }
+    // Domain-specific expansions (Cooking/Therapy)
+    if (titleSan.includes('cooking') || titleSan.includes('cookbook') || titleSan.includes('therapy') || titleSan.includes('therapeutic')) {
+      kwsExact.push('cooking as therapy');
+      kwsExact.push('therapeutic cooking');
+      kwsExact.push('mindful cooking');
+      kwsExact.push('healing through cooking');
+      kwsPhrase.push('cooking therapy book');
+      kwsPhrase.push('mindful cooking cookbook');
+      kwsPhrase.push('emotional healing cookbook');
+      kwsPhrase.push('self care cooking');
+      kwsBroad.push('healing cooking');
+      kwsBroad.push('mental health cooking');
+      kwsBroad.push('anxiety cooking');
+    }
+    // Fallbacks for very short titles
+    if (kwsExact.length === 0) kwsExact.push('cooking as therapy');
+    return {
+      exact: dedupe(kwsExact).slice(0, 12),
+      phrase: dedupe(kwsPhrase).slice(0, 12),
+      broad: dedupe(kwsBroad).slice(0, 12),
+    };
+  };
+  const starter = React.useMemo(buildKeywords, [baseTextRaw]);
+  const copyList = (arr) => {
+    try { navigator.clipboard.writeText(arr.join('\n')); } catch (_) {}
+  };
+  const copyText = (text) => { try { navigator.clipboard.writeText(text); } catch (_) {} };
+
+  // Starter pack — ASIN generator (paste URLs or ASINs)
+  const [asinPaste, setAsinPaste] = React.useState('');
+  const [asinList, setAsinList] = React.useState([]);
+  const extractAsins = React.useCallback(() => {
+    try {
+      const raw = (asinPaste || '').toUpperCase();
+      const matches = raw.match(/[A-Z0-9]{10}/g) || [];
+      const uniq = Array.from(new Set(matches));
+      setAsinList(uniq);
+    } catch (_) { setAsinList([]); }
+  }, [asinPaste]);
+
+  // Auto-Harvest — parse Search Term Report (CSV/TSV paste)
+  const [reportPaste, setReportPaste] = React.useState('');
+  const [reportTerms, setReportTerms] = React.useState([]);
+  const [reportAsins, setReportAsins] = React.useState([]);
+  const analyzeReport = React.useCallback(() => {
+    try {
+      const text = reportPaste || '';
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      if (lines.length < 2) { setReportTerms([]); setReportAsins([]); return; }
+      const header = lines[0].split(/\t|,/);
+      const ixTerm = header.findIndex(h => /customer\s*search\s*term/i.test(h));
+      const ixOrders = header.findIndex(h => /(total\s*orders|7\s*day\s*total\s*orders)/i.test(h));
+      const ixPurchasedAsin = header.findIndex(h => /(purchased\s*asin|asin)/i.test(h));
+      const terms = [];
+      const asins = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(/\t|,/);
+        const term = ixTerm >= 0 ? (cols[ixTerm] || '').trim() : '';
+        const ordersRaw = ixOrders >= 0 ? (cols[ixOrders] || '').trim() : '0';
+        const orders = Number(ordersRaw.replace(/[^0-9.]/g, '')) || 0;
+        const pasin = ixPurchasedAsin >= 0 ? (cols[ixPurchasedAsin] || '').trim() : '';
+        if (orders > 0 && term) terms.push(term);
+        if (orders > 0 && /[A-Z0-9]{10}/i.test(pasin)) asins.push(pasin.toUpperCase().match(/[A-Z0-9]{10}/)[0]);
+      }
+      // Deduplicate and cap for UI
+      setReportTerms(Array.from(new Set(terms)).slice(0, 50));
+      setReportAsins(Array.from(new Set(asins)).slice(0, 50));
+    } catch (_) {
+      setReportTerms([]); setReportAsins([]);
+    }
+  }, [reportPaste]);
+
+  // Clicks-without-orders helper
+  const [clicksInput, setClicksInput] = React.useState('');
+  const [ordersInput, setOrdersInput] = React.useState('');
+  const [spendInput, setSpendInput] = React.useState('');
+  const recommendAction = React.useMemo(() => {
+    const c = Number(clicksInput) || 0;
+    const o = Number(ordersInput) || 0;
+    const s = Number(spendInput) || 0;
+    if (o > 0) {
+      return 'Termine/ASIN con ordini: scala se ACOS ≤ target; altrimenti ottimizza gradualmente.';
+    }
+    if (c >= 30) return '≥30 click senza ordini: riduci offerta −20–30% o aggiungi come negativo (phrase/exact).';
+    if (c >= 20) return '20–29 click senza ordini: riduci offerta −10–20% e monitora altri 7 giorni.';
+    if (s > 0 && c >= 10) return '10–19 click e spesa presente: riduci −10% se CTR/CVR bassi; attendi fino a 20–30 click.';
+    return 'Raccogli più dati prima di intervenire (obiettivo 20–30 click).';
+  }, [clicksInput, ordersInput, spendInput]);
 
   const totSpend = Number.isFinite(budgetUsd) ? budgetUsd : 0; // USD
   const totClicks = (cpcForCalc && cpcForCalc > 0) ? (totSpend / cpcForCalc) : 0;
@@ -167,11 +304,13 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
       rows.push(`${asin || 'N/A'},${scenario},${horizonDays},${Number(budgetUsd).toFixed(2)},${dailyTotal.toFixed(2)}`);
       rows.push('Sezione,Voce,Budget Giornaliero (USD),Budget Totale (USD)');
       const total = (x) => (x * Math.max(1, Number(horizonDays))).toFixed(2);
-      rows.push(`Sponsored Products,Auto,${spAutoDaily.toFixed(2)},${total(spAutoDaily)}`);
-      rows.push(`Sponsored Products,Broad/Phrase,${spBroadDaily.toFixed(2)},${total(spBroadDaily)}`);
-      rows.push(`Sponsored Products,Exact,${spExactDaily.toFixed(2)},${total(spExactDaily)}`);
-      rows.push(`Sponsored Brands,Totale,${sbDaily.toFixed(2)},${total(sbDaily)}`);
-      rows.push(`Sponsored Display,Totale,${sdDaily.toFixed(2)},${total(sdDaily)}`);
+      if (channelsEnabled.sp) {
+        rows.push(`Sponsored Products,Auto,${spAutoDaily.toFixed(2)},${total(spAutoDaily)}`);
+        rows.push(`Sponsored Products,Broad/Phrase,${spBroadDaily.toFixed(2)},${total(spBroadDaily)}`);
+        rows.push(`Sponsored Products,Exact,${spExactDaily.toFixed(2)},${total(spExactDaily)}`);
+      }
+      if (channelsEnabled.sb) rows.push(`Sponsored Brands,Totale,${sbDaily.toFixed(2)},${total(sbDaily)}`);
+      if (channelsEnabled.sd) rows.push(`Sponsored Display,Totale,${sdDaily.toFixed(2)},${total(sdDaily)}`);
       const csv = rows.join('\n');
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
@@ -274,6 +413,216 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
               </div>
             </div>
           </section>
+          {/* Starter pack — ASIN (Generatore) */}
+          <section>
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-2"><Layers3 className="w-5 h-5 text-violet-400"/> Starter pack — ASIN (Generatore)</h3>
+            <p className="text-[12px] text-gray-400 -mt-1 mb-2">Incolla URL prodotto o codici ASIN. Li estraiamo, li deduplichiamo e ti diamo i bid consigliati (Exact/Expanded).</p>
+            <div className="grid sm:grid-cols-2 gap-3 text-sm">
+              <div className="bg-white/5 rounded-lg p-3">
+                <textarea value={asinPaste} onChange={(e)=> setAsinPaste(e.target.value)} rows={6}
+                  className="w-full bg-transparent border border-white/10 rounded p-2 text-gray-100 placeholder-gray-500"
+                  placeholder={`Esempi:\nhttps://www.amazon.com/dp/B0CXXXXXXX\nB0DXXXXXXX\nhttps://www.amazon.com/gp/product/B0EXXXXXXX`}/>
+                <div className="mt-2 flex gap-2 items-center">
+                  <button onClick={extractAsins} className="px-2 py-1 rounded border border-white/10 hover:border-emerald-400 text-[12px] text-gray-200">Estrai ASIN</button>
+                  <span className="text-[12px] text-gray-400">Trovati: {asinList.length}</span>
+                </div>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400 mb-1">ASIN estratti</p>
+                <div className="flex flex-wrap gap-2 text-[12px]">
+                  <button onClick={()=> copyList(asinList)} className="px-2 py-1 rounded border border-white/10 hover:border-emerald-400 text-gray-200">Copia lista</button>
+                  <button onClick={()=> copyText(['ASIN,Match,Bid', ...asinList.map(a=>`${a},exact,${bidAsinExact!=null?`$${bidAsinExact.toFixed(2)}`:'—'}`)].join('\n'))} className="px-2 py-1 rounded border border-white/10 hover:border-emerald-400 text-gray-200">Copia CSV (Exact)</button>
+                  <button onClick={()=> copyText(['ASIN,Match,Bid', ...asinList.map(a=>`${a},expanded,${bidAsinExpanded!=null?`$${bidAsinExpanded.toFixed(2)}`:'—'}`)].join('\n'))} className="px-2 py-1 rounded border border-white/10 hover:border-emerald-400 text-gray-200">Copia CSV (Expanded)</button>
+                </div>
+                <div className="mt-2 text-[12px] text-gray-300">Exact ASIN ≈ {bidAsinExact!=null?`$${bidAsinExact.toFixed(2)}`:'—'} • Expanded ≈ {bidAsinExpanded!=null?`$${bidAsinExpanded.toFixed(2)}`:'—'}</div>
+                <ul className="mt-2 space-y-1 text-gray-200 max-h-40 overflow-auto">
+                  {asinList.slice(0,50).map(a => (<li key={a}>{a}</li>))}
+                </ul>
+              </div>
+            </div>
+          </section>
+          {/* Auto‑Harvest — da Search Term Report */}
+          <section>
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-2"><Focus className="w-5 h-5 text-indigo-400"/> Auto‑Harvest — da Report</h3>
+            <p className="text-[12px] text-gray-400 -mt-1 mb-2">Incolla righe dal Report dei Termini di Ricerca (CSV/TSV). Cerchiamo termini/ASIN con ordini per promuoverli.</p>
+            <div className="grid sm:grid-cols-2 gap-3 text-sm">
+              <div className="bg-white/5 rounded-lg p-3">
+                <textarea value={reportPaste} onChange={(e)=> setReportPaste(e.target.value)} rows={6}
+                  className="w-full bg-transparent border border-white/10 rounded p-2 text-gray-100 placeholder-gray-500"
+                  placeholder={`Incolla qui il CSV (prime righe con intestazioni). Campi attesi:\nCustomer Search Term, 7 Day Total Orders (#), Purchased ASIN ...`}/>
+                <div className="mt-2">
+                  <button onClick={analyzeReport} className="px-2 py-1 rounded border border-white/10 hover:border-emerald-400 text-[12px] text-gray-200">Analizza</button>
+                </div>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <div className="grid sm:grid-cols-2 gap-2">
+                  <div>
+                    <p className="text-gray-400 mb-1">Termini con ordini (→ Exact)</p>
+                    <div className="flex flex-wrap gap-2 text-[12px] mb-1">
+                      <button onClick={()=> copyList(reportTerms)} className="px-2 py-1 rounded border border-white/10 hover:border-emerald-400 text-gray-200">Copia</button>
+                    </div>
+                    <ul className="space-y-1 text-gray-200 max-h-40 overflow-auto">
+                      {reportTerms.slice(0,50).map((t,i)=> (<li key={`t-${i}`}>{t}</li>))}
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="text-gray-400 mb-1">ASIN acquistati (→ Prodotti Exact)</p>
+                    <div className="flex flex-wrap gap-2 text-[12px] mb-1">
+                      <button onClick={()=> copyList(reportAsins)} className="px-2 py-1 rounded border border-white/10 hover:border-emerald-400 text-gray-200">Copia</button>
+                    </div>
+                    <ul className="space-y-1 text-gray-200 max-h-40 overflow-auto">
+                      {reportAsins.slice(0,50).map((a)=> (<li key={`a-${a}`}>{a}</li>))}
+                    </ul>
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-400 mt-2">Suggerimento: promuovi subito in Exact e usa bid ≈ {bidExact!=null?`$${bidExact.toFixed(2)}`:'—'}; considera negative per i termini che spendono senza ordini.</p>
+              </div>
+            </div>
+          </section>
+          {/* Soglie — Click senza ordini */}
+          <section>
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-yellow-400"/> Soglie — Click senza ordini</h3>
+            <div className="grid sm:grid-cols-4 gap-3 text-sm">
+              <div className="bg-white/5 rounded-lg p-3">
+                <label className="block text-[11px] text-gray-400">Click</label>
+                <input type="number" value={clicksInput} onChange={(e)=> setClicksInput(e.target.value)} className="w-full bg-transparent border border-white/10 rounded px-2 py-1 text-white" />
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <label className="block text-[11px] text-gray-400">Ordini</label>
+                <input type="number" value={ordersInput} onChange={(e)=> setOrdersInput(e.target.value)} className="w-full bg-transparent border border-white/10 rounded px-2 py-1 text-white" />
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <label className="block text-[11px] text-gray-400">Spesa ($)</label>
+                <input type="number" value={spendInput} onChange={(e)=> setSpendInput(e.target.value)} className="w-full bg-transparent border border-white/10 rounded px-2 py-1 text-white" />
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-[11px] text-gray-400">Raccomandazione</p>
+                <p className="text-gray-200">{recommendAction}</p>
+              </div>
+            </div>
+          </section>
+          {/* Quanti per iniziare (volumi consigliati) */}
+          <section>
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-2"><Target className="w-5 h-5 text-cyan-400"/> Quanti per iniziare</h3>
+            <div className="grid sm:grid-cols-3 gap-3 text-sm">
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400 mb-1">Keywords</p>
+                <ul className="list-disc pl-5 space-y-1 text-gray-300">
+                  <li>Broad: 20–50</li>
+                  <li>Phrase: 15–30</li>
+                  <li>Exact: 10–20</li>
+                  <li className="text-[12px] text-gray-400">Più intenti → più veloce trovi i vincenti</li>
+                </ul>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400 mb-1">ASIN (Prodotti)</p>
+                <ul className="list-disc pl-5 space-y-1 text-gray-300">
+                  <li>Exact ASIN: 20–40</li>
+                  <li>Expanded/Category: opzionale per volume</li>
+                  <li className="text-[12px] text-gray-400">Parti lean, poi scala i vincenti</li>
+                </ul>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400 mb-1">Negativi (iniziali)</p>
+                <ul className="list-disc pl-5 space-y-1 text-gray-300">
+                  <li>Frasi generiche troppo ampie</li>
+                  <li>Termini fuori genere</li>
+                  <li className="text-[12px] text-gray-400">Aggiungi altri dopo 20–30 click senza ordini</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+          {/* Dove trovarli — fonti avanzate */}
+          <section>
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-2"><Search className="w-5 h-5 text-sky-400"/> Dove trovarli (avanzato)</h3>
+            <div className="grid sm:grid-cols-2 gap-3 text-sm">
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400 mb-1">Keywords</p>
+                <ul className="list-disc pl-5 space-y-1 text-gray-300">
+                  <li>Autocomplete Amazon (barra ricerca in Libri)</li>
+                  <li>Sezione "I clienti hanno cercato" nelle pagine prodotto</li>
+                  <li>Best Seller/Category tree: termini delle sottocategorie</li>
+                  <li>Look Inside/Indice: concetti, capitoli, temi forti</li>
+                  <li>Termini dei competitor che convertono (dal report ricerche)</li>
+                </ul>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400 mb-1">ASIN</p>
+                <ul className="list-disc pl-5 space-y-1 text-gray-300">
+                  <li>Pagine competitor: Correlati, Acquistati anche</li>
+                  <li>Top 100 della tua sottocategoria</li>
+                  <li>ASIN emersi da campagne Auto/Broad con ordini</li>
+                  <li>Liste editoriali/curate (es. mindful cooking, self‑help)</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+          {/* Esempi pratici — "Cooking as Therapy?" */}
+          <section>
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-2"><Lightbulb className="w-5 h-5 text-amber-400"/> Esempi pratici — "Cooking as Therapy?"</h3>
+            <div className="grid sm:grid-cols-3 gap-3 text-sm">
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400">Broad (≈ {bidBroad != null ? `$${bidBroad.toFixed(2)}` : '—'})</p>
+                <ul className="mt-1 space-y-1 text-gray-200">
+                  <li>healing cooking</li>
+                  <li>mindful cooking exercises</li>
+                  <li>anxiety relief cooking</li>
+                  <li>stress relief cooking</li>
+                  <li>self care cooking ideas</li>
+                </ul>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400">Phrase (≈ {bidBroad != null ? `$${bidBroad.toFixed(2)}` : '—'})</p>
+                <ul className="mt-1 space-y-1 text-gray-200">
+                  <li>"cooking therapy book"</li>
+                  <li>"mindful cooking cookbook"</li>
+                  <li>"healing through cooking book"</li>
+                  <li>"therapeutic recipes for anxiety"</li>
+                  <li>"self care cooking journal"</li>
+                </ul>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400">Exact (≈ {bidExact != null ? `$${bidExact.toFixed(2)}` : '—'})</p>
+                <ul className="mt-1 space-y-1 text-gray-200">
+                  <li>[cooking as therapy]</li>
+                  <li>[therapeutic cooking]</li>
+                  <li>[mindful cooking]</li>
+                  <li>[healing cooking workbook]</li>
+                  <li>[cooking therapy journal]</li>
+                </ul>
+              </div>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-3 text-sm mt-3">
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400 mb-1">ASIN — cosa cercare</p>
+                <ul className="list-disc pl-5 space-y-1 text-gray-300">
+                  <li>Cookbook mindful/therapeutic con prezzo 10–20$</li>
+                  <li>Libri self‑help su ansia/stress con tag cucina</li>
+                  <li>Valutazioni 4.2–4.7 e 200–2000 recensioni</li>
+                </ul>
+                <p className="text-[12px] text-gray-400 mt-1">Formato ASIN: es. B0CXXXXXXX (copia dagli URL prodotto)</p>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400 mb-1">Negativi comuni</p>
+                <ul className="list-disc pl-5 space-y-1 text-gray-300">
+                  <li>Termini ricette molto generici (solo volume)</li>
+                  <li>Brand non pertinenti o competitor irraggiungibili</li>
+                  <li>Query informative pure ("what is therapy")</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+          {/* Template di raccolta (copia rapida) */}
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2"><Clipboard className="w-5 h-5 text-zinc-300"/> Template raccolta</h3>
+              <div className="flex gap-2 text-[12px]">
+                <button onClick={()=>copyText('ASIN,Match,Note\nB0CXXXXXXX,exact,competitor main\nB0DXXXXXXX,exact,also bought\nCATEGORY,expanded,category-page')} className="px-2 py-1 rounded border border-white/10 hover:border-emerald-400 text-gray-200">Copia template ASIN</button>
+                <button onClick={()=>copyText('Match,Keyword\nBroad,healing cooking\nPhrase,cooking therapy book\nExact,[cooking as therapy]')} className="px-2 py-1 rounded border border-white/10 hover:border-emerald-400 text-gray-200">Copia template KW</button>
+              </div>
+            </div>
+            <p className="text-[12px] text-gray-400 -mt-1 mb-2">Usali come base per un foglio di lavoro/CSV; incolla qui i vincitori e promuovili in Exact.</p>
+          </section>
           {/* Calcolatore CPC e Offerte */}
           <section>
             <div className="flex items-center justify-between mb-2">
@@ -368,7 +717,108 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
                 <p className="text-white">Broad/Phrase: {bidBroad != null ? `$${bidBroad.toFixed(2)}` : '—'}</p>
                 <p className="text-white">Exact: {bidExact != null ? `$${bidExact.toFixed(2)}` : '—'}</p>
                 <p className="text-[12px] text-gray-400">Aggiusta ±10–20%/settimana in base a CTR, CVR e ACOS.</p>
+                {/* Auto subgroup guidance */}
+                <div className="mt-2 text-[12px] text-gray-300 space-y-1">
+                  <p>
+                    Quando la dashboard ti dà “Auto: {bidAuto != null ? `$${bidAuto.toFixed(2)}` : '$—'}” è un punto di partenza medio per l’intera campagna automatica.
+                    All’interno dell’Auto differenzia i 4 gruppi in base alle performance:
+                  </p>
+                  {(() => {
+                    const base = bidAuto;
+                    const fmtv = (v)=> (Number.isFinite(v) ? `$${v.toFixed(2)}` : '—');
+                    const close = base;
+                    const subsL = base != null ? base : null;
+                    const subsH = base != null ? base * 1.15 : null;
+                    const looseL = base != null ? base * 0.75 : null;
+                    const looseH = base != null ? base * 0.85 : null;
+                    const compL = base != null ? base * 0.60 : null;
+                    const compH = base != null ? base * 0.75 : null;
+                    return (
+                      <ul className="list-disc pl-4 space-y-0.5">
+                        <li>Substitutes → spesso forti: {fmtv(subsL)} – {fmtv(subsH)}</li>
+                        <li>Close Match → simile al base: {fmtv(close)}</li>
+                        <li>Loose Match → più prudente: {fmtv(looseL)} – {fmtv(looseH)}</li>
+                        <li>Complements → basso finché non converte: {fmtv(compL)} – {fmtv(compH)}</li>
+                      </ul>
+                    );
+                  })()}
+                  <p>
+                    Broad e Phrase: parti dallo stesso CPC ({bidBroad != null ? `$${bidBroad.toFixed(2)}` : '—'}), poi separa/ottimizza in base a CTR/CVR.
+                    Exact più alto ha senso (intento maggiore): il suggerito qui è ~+10% del CPC.
+                  </p>
+                  <p className="text-gray-400">In pratica: alza dove vendono (ACOS ≤ target), abbassa dove non convertono.</p>
+                </div>
               </div>
+            </div>
+          </section>
+          {/* SP — Targeting Prodotti (ASIN) */}
+          <section>
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-2"><Layers3 className="w-5 h-5 text-violet-400"/> SP — Targeting Prodotti (ASIN)</h3>
+            <div className="grid sm:grid-cols-2 gap-3 text-sm">
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400 mb-1">Dove trovare gli ASIN</p>
+                <ul className="list-disc pl-5 space-y-1 text-gray-300">
+                  <li>Report termini di ricerca: prendi i prodotti che hanno generato click/ordini.</li>
+                  <li>Pagine dei competitor: "Prodotti correlati", "I clienti hanno acquistato anche".</li>
+                  <li>Classifiche Best Seller della categoria del tuo libro (BSR simile).</li>
+                  <li>Campagne Auto: estrai gli ASIN vincenti e spostali in Prodotti (exact).</li>
+                </ul>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400 mb-1">Criteri di selezione</p>
+                <ul className="list-disc pl-5 space-y-1 text-gray-300">
+                  <li>Coerenza: stesso genere/categoria, target lettori simile.</li>
+                  <li>Prezzo: entro ±20% dal tuo, o leggermente più alto (vantaggio competitivo).</li>
+                  <li>Prova sociale: recensioni/valutazione comparabili (non selezionare giganti inattaccabili all’inizio).</li>
+                  <li>Formato: stesso binding (paperback) e lingua/mercato.</li>
+                </ul>
+              </div>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-3 text-sm mt-3">
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400 mb-1">Offerte consigliate (ASIN)</p>
+                <p className="text-white">Exact ASIN: {bidAsinExact != null ? `$${bidAsinExact.toFixed(2)}` : '—'}</p>
+                <p className="text-white">Expanded/Category: {bidAsinExpanded != null ? `$${bidAsinExpanded.toFixed(2)}` : '—'}</p>
+                <p className="text-[12px] text-gray-400">Exact = ASIN specifici ad alto intento; Expanded/Category = volume più ampio, minore intento.</p>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400 mb-1">Quando aggiungere / ottimizzare</p>
+                <ul className="list-disc pl-5 space-y-1 text-gray-300">
+                  <li>Aggiungi nuovi ASIN ogni 7–14 giorni dai report o dai risultati Auto.</li>
+                  <li>Alza di +10–20% se ACOS ≤ target e ordini presenti; riduci di −10–30% se molti click senza ordini.</li>
+                  <li>Regola o sospendi dopo 20–30 click senza vendite (o 7–14 giorni di spesa senza ordini).</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+          {/* Parole chiave — Broad / Phrase / Exact */}
+          <section>
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-2"><Focus className="w-5 h-5 text-indigo-400"/> Parole chiave — Broad / Phrase / Exact</h3>
+            <div className="grid sm:grid-cols-2 gap-3 text-sm">
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400 mb-1">Sorgenti & selezione</p>
+                <ul className="list-disc pl-5 space-y-1 text-gray-300">
+                  <li>Seed da titolo/sottotitolo, sottocategorie, sinossi, temi e intenti (es. "Cooking as Therapy?").</li>
+                  <li>Report termini di ricerca: promuovi i termini con ordini in Exact, metti in negativo i dispersivi.</li>
+                  <li>Long‑tail (3+ parole) per iniziare: migliore rapporto intenti/costi.</li>
+                </ul>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-gray-400 mb-1">Bids & timeline</p>
+                <ul className="list-disc pl-5 space-y-1 text-gray-300">
+                  <li>Broad/Phrase: {bidBroad != null ? `$${bidBroad.toFixed(2)}` : '—'} (scoperta/espansione)</li>
+                  <li>Exact: {bidExact != null ? `$${bidExact.toFixed(2)}` : '—'} (intento alto, CPC maggiore)</li>
+                  <li>Ottimizza ogni 7–14 giorni: +10–20% sui vincenti (ACOS ≤ target), −10–30% su click senza ordini.</li>
+                </ul>
+              </div>
+            </div>
+            <div className="bg-white/5 rounded-lg p-3 text-sm mt-3">
+              <p className="text-gray-400 mb-1">Flusso di harvesting</p>
+              <ul className="list-disc pl-5 space-y-1 text-gray-300">
+                <li>Auto/Broad → promuovi i termini con vendite in Exact (con bid {bidExact != null ? `$${bidExact.toFixed(2)}` : '—'}).</li>
+                <li>Aggiungi negative su ricerche che spendono senza vendere (uguali in Broad/Phrase/Auto per isolare).</li>
+                <li>Rivedi settimanalmente, poi quindicinalmente quando stabilizzato.</li>
+              </ul>
             </div>
           </section>
           {/* Pianificatore Budget (300 USD) */}
@@ -377,7 +827,7 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
               <h3 className="text-lg font-semibold text-white flex items-center gap-2"><BarChart2 className="w-5 h-5 text-blue-400"/> Pianificatore Budget (300 USD)</h3>
               <button onClick={exportBudgetCsv} className="px-3 py-1.5 rounded border border-white/10 hover:border-emerald-400 text-[12px] text-gray-200">Esporta CSV</button>
             </div>
-            <p className="text-[12px] text-gray-400 -mt-1 mb-2">Distribuisci il budget per giorno e canale; i suggerimenti di CPC e offerte si aggiornano automaticamente.</p>
+            <p className="text-[12px] text-gray-400 -mt-1 mb-2">Distribuisci il budget per giorno e canale; i suggerimenti di CPC e offerte si aggiornano automaticamente. Puoi anche <span className="text-gray-200">escludere SB/SD</span> per concentrarti su Sponsored Products.</p>
             <div className="grid sm:grid-cols-4 gap-3 text-sm">
               <div className="bg-white/5 rounded-lg p-3 space-y-2">
                 <label className="block text-[11px] text-gray-400">Budget totale (USD)</label>
@@ -418,6 +868,18 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
                   ))}
                 </div>
                 {/* FX alignment UI removed: all values assumed in USD */}
+                <label className="block text-[11px] text-gray-400 mt-2">Canali attivi</label>
+                <div className="flex flex-wrap gap-2 text-[12px]">
+                  <label className="inline-flex items-center gap-1 cursor-pointer">
+                    <input type="checkbox" className="accent-emerald-400" checked={channelsEnabled.sp} onChange={(e)=> setChannelsEnabled(prev=>({...prev, sp: e.target.checked}))} /> SP
+                  </label>
+                  <label className="inline-flex items-center gap-1 cursor-pointer">
+                    <input type="checkbox" className="accent-emerald-400" checked={channelsEnabled.sb} onChange={(e)=> setChannelsEnabled(prev=>({...prev, sb: e.target.checked}))} /> SB
+                  </label>
+                  <label className="inline-flex items-center gap-1 cursor-pointer">
+                    <input type="checkbox" className="accent-emerald-400" checked={channelsEnabled.sd} onChange={(e)=> setChannelsEnabled(prev=>({...prev, sd: e.target.checked}))} /> SD
+                  </label>
+                </div>
               </div>
               <div className="bg-white/5 rounded-lg p-3">
                 <p className="text-gray-400">Spesa giornaliera totale</p>
@@ -426,8 +888,12 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
               </div>
               <div className="bg-white/5 rounded-lg p-3 space-y-1">
                 <p className="text-gray-400">Allocazione per canale (giorno)</p>
-                <p className="text-white">SP: {`$${spDaily.toFixed(2)}`} • SB: {`$${sbDaily.toFixed(2)}`} • SD: {`$${sdDaily.toFixed(2)}`}</p>
-                <p className="text-[12px] text-gray-400">Regola le percentuali cambiando scenario.</p>
+                <p className="text-white">
+                  SP: {channelsEnabled.sp ? `$${spDaily.toFixed(2)}` : '—'} •
+                  {' '}SB: {channelsEnabled.sb ? `$${sbDaily.toFixed(2)}` : '—'} •
+                  {' '}SD: {channelsEnabled.sd ? `$${sdDaily.toFixed(2)}` : '—'}
+                </p>
+                <p className="text-[12px] text-gray-400">Regola le percentuali cambiando scenario o attiva/disattiva canali.</p>
               </div>
               <div className="bg-white/5 rounded-lg p-3 space-y-1">
                 <p className="text-gray-400">Dettaglio SP (giorno)</p>
@@ -551,7 +1017,7 @@ const AsinAcosGuideModal = ({ asinData, breakEvenAcos, isOpen, onClose }) => {
               <li>Imposta un ACOS target dall’ACOS di pareggio (BE × 60–85%) e usalo per guidare le decisioni.</li>
               <li>Avvia 3 campagne SP: Auto (scoperta), Broad/Phrase (esplorazione), Exact (vincenti).</li>
               <li>Stabilisci budget giornalieri costanti (es. $10–20/campagna) per raccogliere dati iniziali.</li>
-              <li>Calcola l’offerta iniziale con CPC ≈ ACOS target × Prezzo × CVR (assumi CVR 10% se non nota).</li>
+              <li>Calcola l’offerta iniziale con CPC ≈ ACOS target × Prezzo × CVR (assumi CVR 15% se non nota).</li>
               <li>Ogni settimana: +10–20% sui termini che convertono sotto target; −10–30% su quelli costosi senza vendite.</li>
               <li>Usa il report dei termini di ricerca: sposta i vincenti in Exact; aggiungi negative dove sprecano.</li>
               <li>Aumenta il CTR: copertina forte, titolo/sottotitolo chiari, hook di genere, posizionamenti ottimizzati.</li>

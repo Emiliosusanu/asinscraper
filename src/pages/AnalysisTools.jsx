@@ -41,6 +41,7 @@ const AnalysisCard = ({ icon: Icon, title, value, change, description, color, is
 
 const BookPerformanceCard = ({ book, type }) => {
   const isTop = type === 'top';
+  const ArrowIcon = isTop ? TrendingDown : TrendingUp; // BSR down = good (green), BSR up = bad (red)
   return (
     <motion.div 
       whileHover={{ y: -5 }}
@@ -52,7 +53,7 @@ const BookPerformanceCard = ({ book, type }) => {
         <p className="text-sm text-muted-foreground">BSR: {formatNumber(book.bsr)}</p>
       </div>
       <div className={`flex items-center gap-1 text-sm font-bold ${isTop ? 'text-green-400' : 'text-red-400'}`}>
-        {isTop ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+        <ArrowIcon className="w-4 h-4" />
         <span>{formatNumber(book.bsr_change)}</span>
       </div>
     </motion.div>
@@ -134,22 +135,30 @@ const MarketAnalysis = () => {
       };
     }
 
-    const asinsWithChange = asins.map(asin => {
-      const relevantHistory = history
-        .filter(h => h.asin_data_id === asin.id)
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-      
-      if (relevantHistory.length < 2) return { ...asin, bsr_change: 0 };
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 15);
 
-      const latestBsr = relevantHistory[0].bsr;
-      const oldestBsr = relevantHistory[relevantHistory.length - 1].bsr;
-      const bsr_change = oldestBsr - latestBsr; // Positive change is good (lower BSR)
+    const withDelta15d = asins.map(asin => {
+      const recent = history
+        .filter(h => h.asin_data_id === asin.id && new Date(h.created_at) >= cutoff)
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); // oldest..latest in last 15d
+      if (recent.length < 2) return null;
+      const oldestBsr = recent[0]?.bsr ?? null;
+      const latestBsr = recent[recent.length - 1]?.bsr ?? null;
+      if (!Number.isFinite(oldestBsr) || !Number.isFinite(latestBsr)) return null;
+      const bsr_change = oldestBsr - latestBsr; // positive => BSR decreased (good)
       return { ...asin, bsr: latestBsr, bsr_change };
-    });
+    }).filter(Boolean);
 
-    const sortedByChange = [...asinsWithChange].sort((a, b) => b.bsr_change - a.bsr_change);
-    const topPerformers = sortedByChange.slice(0, 3);
-    const worstPerformers = sortedByChange.slice(-3).reverse();
+    const topPerformers = withDelta15d
+      .filter(b => Number.isFinite(b.bsr_change) && b.bsr_change > 0)
+      .sort((a, b) => b.bsr_change - a.bsr_change)
+      .slice(0, 3);
+
+    const worstPerformers = withDelta15d
+      .filter(b => Number.isFinite(b.bsr_change) && b.bsr_change < 0)
+      .sort((a, b) => a.bsr_change - b.bsr_change) // most negative first (largest increase in BSR)
+      .slice(0, 3);
 
     // Real income sum over last 30 days (EUR)
     const totalIncome = (entries || []).reduce((sum, r) => sum + (parseFloat(r.income ?? 0) || 0), 0);
