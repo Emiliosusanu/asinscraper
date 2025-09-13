@@ -55,93 +55,117 @@ serve(async (req: Request) => {
     }
 
     const payload = await req.json().catch(() => ({}));
-    const userId: string | null = payload?.userId ?? null;
+    const userIdInput: string | null = payload?.userId ?? null;
     const day: string = payload?.day || toDateKey(new Date());
-    if (!userId) {
-      return new Response(JSON.stringify({ success: false, error: "Missing userId" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
 
     const client = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
-    // Load rules
-    const { data: rules, error: rulesErr } = await client
-      .from("notification_rules")
-      .select("id, name, rule_type, condition, cooloff_seconds, channels, enabled")
-      .eq("user_id", userId)
-      .eq("enabled", true);
-    if (rulesErr) throw rulesErr;
+    async function processForUser(userId: string, dayKey: string): Promise<{created: number; skipped: number}> {
+      // Load rules
+      const { data: rules, error: rulesErr } = await client
+        .from("notification_rules")
+        .select("id, name, rule_type, condition, cooloff_seconds, channels, enabled")
+        .eq("user_id", userId)
+        .eq("enabled", true);
+      if (rulesErr) throw rulesErr;
 
-    // Load today's snapshots
-    const { data: snaps, error: snapsErr } = await client
-      .from("performance_snapshots")
-      .select("id, asin_data_id, asin, country, day, qi_score, baseline_percentile, volatility_30, momentum_7, elasticity_est")
-      .eq("user_id", userId)
-      .eq("day", day);
-    if (snapsErr) throw snapsErr;
+      if (!rules || rules.length === 0) return { created: 0, skipped: 0 };
 
-    // Optional tips library
-    const { data: tipsLib } = await client
-      .from("tips_library")
-      .select("code, title, body_md, severity");
-    const tipsByCode = new Map<string, any>();
-    for (const t of tipsLib || []) tipsByCode.set(t.code, t);
+      // Load today's snapshots
+      const { data: snaps, error: snapsErr } = await client
+        .from("performance_snapshots")
+        .select("id, asin_data_id, asin, country, day, qi_score, baseline_percentile, volatility_30, momentum_7, elasticity_est")
+        .eq("user_id", userId)
+        .eq("day", dayKey);
+      if (snapsErr) throw snapsErr;
 
-    let created = 0;
-    let skipped = 0;
+      // Optional tips library
+      const { data: tipsLib } = await client
+        .from("tips_library")
+        .select("code, title, body_md, severity");
+      const tipsByCode = new Map<string, any>();
+      for (const t of tipsLib || []) tipsByCode.set(t.code, t);
 
-    for (const rule of rules || []) {
-      const cond = (rule as any).condition || {};
-      const cooloffSec = Number(rule.cooloff_seconds || 21600);
-      const channels: string[] = Array.isArray(rule.channels) ? rule.channels : ["inapp"];
+      let created = 0;
+      let skipped = 0;
 
-      for (const snap of snaps || []) {
-        const pass = evalCondition(snap, cond);
-        if (!pass) { skipped++; continue; }
+      for (const rule of rules || []) {
+        const cond = (rule as any).condition || {};
+        const cooloffSec = Number(rule.cooloff_seconds || 21600);
+        const channels: string[] = Array.isArray(rule.channels) ? rule.channels : ["inapp"];
 
-        // dedupe by cooloff
-        const keySig = JSON.stringify({ rule: rule.id, asin: snap.asin_data_id, cond });
-        const dedupeKey = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(keySig)).then((buf) =>
-          Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("")
-        );
+        for (const snap of snaps || []) {
+          const pass = evalCondition(snap, cond);
+          if (!pass) { skipped++; continue; }
 
-        const { data: recent } = await client
-          .from("notification_events")
-          .select("id, created_at")
-          .eq("user_id", userId)
-          .eq("dedupe_key", dedupeKey)
-          .gte("created_at", new Date(Date.now() - cooloffSec * 1000).toISOString())
-          .limit(1);
-        if (recent && recent.length) { skipped++; continue; }
+          // dedupe by cooloff
+          const keySig = JSON.stringify({ rule: rule.id, asin: snap.asin_data_id, cond });
+          const dedupeKey = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(keySig)).then((buf) =>
+            Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("")
+          );
 
-        // optional tip binding via condition.tip_code
-        const tipCode = (cond && (cond as any).tip_code) ? String((cond as any).tip_code) : null;
-        const tip = tipCode ? tipsByCode.get(tipCode) : null;
+          const { data: recent } = await client
+            .from("notification_events")
+            .select("id, created_at")
+            .eq("user_id", userId)
+            .eq("dedupe_key", dedupeKey)
+            .gte("created_at", new Date(Date.now() - cooloffSec * 1000).toISOString())
+            .limit(1);
+          if (recent && recent.length) { skipped++; continue; }
 
-        const severity = tip?.severity || 'info';
-        const title = tip?.title || rule.name || 'Performance update';
-        const baseMd = tip?.body_md || '';
-        const md = `${baseMd}\n\nASIN: ${snap.asin}\nCountry: ${snap.country}\n\nMetrics (today):\n- QI: ${snap.qi_score ?? '—'}\n- Momentum(7): ${snap.momentum_7 ?? '—'}\n- Volatility(30): ${snap.volatility_30 ?? '—'}\n- Baseline pct: ${snap.baseline_percentile ?? '—'}\n- Elasticity est: ${snap.elasticity_est ?? '—'}`;
+          // optional tip binding via condition.tip_code
+          const tipCode = (cond && (cond as any).tip_code) ? String((cond as any).tip_code) : null;
+          const tip = tipCode ? tipsByCode.get(tipCode) : null;
 
-        // insert one event per channel
-        for (const ch of channels) {
-          const { error: insErr } = await client.from("notification_events").insert({
-            user_id: userId,
-            asin_data_id: snap.asin_data_id,
-            rule_id: rule.id,
-            severity,
-            title,
-            body_md: md,
-            channel: ch,
-            dedupe_key: dedupeKey,
-            status: 'queued',
-          });
-          if (insErr) console.error('insert event error', insErr);
+          const severity = tip?.severity || 'info';
+          const title = tip?.title || rule.name || 'Performance update';
+          const baseMd = tip?.body_md || '';
+          const md = `${baseMd}\n\nASIN: ${snap.asin}\nCountry: ${snap.country}\n\nMetrics (today):\n- QI: ${snap.qi_score ?? '—'}\n- Momentum(7): ${snap.momentum_7 ?? '—'}\n- Volatility(30): ${snap.volatility_30 ?? '—'}\n- Baseline pct: ${snap.baseline_percentile ?? '—'}\n- Elasticity est: ${snap.elasticity_est ?? '—'}`;
+
+          // insert one event per channel
+          for (const ch of channels) {
+            const { error: insErr } = await client.from("notification_events").insert({
+              user_id: userId,
+              asin_data_id: snap.asin_data_id,
+              rule_id: rule.id,
+              severity,
+              title,
+              body_md: md,
+              channel: ch,
+              dedupe_key: dedupeKey,
+              status: 'queued',
+            });
+            if (insErr) console.error('insert event error', insErr);
+          }
+          created++;
         }
-        created++;
       }
+
+      return { created, skipped };
     }
 
-    return new Response(JSON.stringify({ success: true, created, skipped }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // Decide which users to process
+    let userIds: string[] = [];
+    if (userIdInput) {
+      userIds = [userIdInput];
+    } else {
+      // Use users with enabled rules
+      const { data: usersRows, error: uerr } = await client
+        .from('notification_rules')
+        .select('user_id')
+        .eq('enabled', true)
+        .limit(10000);
+      if (uerr) throw uerr;
+      userIds = Array.from(new Set((usersRows || []).map((r: any) => r.user_id).filter(Boolean)));
+    }
+
+    let totalCreated = 0; let totalSkipped = 0;
+    for (const uid of userIds) {
+      const { created, skipped } = await processForUser(uid, day);
+      totalCreated += created; totalSkipped += skipped;
+    }
+
+    return new Response(JSON.stringify({ success: true, created: totalCreated, skipped: totalSkipped, users: userIds.length }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     return new Response(JSON.stringify({ success: false, error: String(e?.message || e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
