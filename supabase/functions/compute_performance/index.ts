@@ -63,137 +63,82 @@ serve(async (req: Request) => {
     }
 
     const payload = await req.json().catch(() => ({}));
-    const inputUserId: string | null = payload?.userId ?? null;
+    const userId: string | null = payload?.userId ?? null;
+    if (!userId) {
+      return new Response(JSON.stringify({ success: false, error: "Missing userId" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     const client = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
-    // helper to compute metrics and snapshots for a single user
-    async function computeForUser(userId: string): Promise<void> {
-      // Fetch user's ASINs
-      const { data: asins, error: asinsError } = await client
-        .from("asin_data")
-        .select("id, asin, country")
-        .eq("user_id", userId);
-      if (asinsError) {
-        throw new Error(asinsError.message);
+    // Fetch user's ASINs
+    const { data: asins, error: asinsError } = await client
+      .from("asin_data")
+      .select("id, asin, country")
+      .eq("user_id", userId);
+
+    if (asinsError) {
+      return new Response(JSON.stringify({ success: false, error: asinsError.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    const todayKey = toDateKey(new Date());
+
+    for (const row of asins || []) {
+      const asinId = row.id;
+      // last 60 days of history
+      const since = new Date();
+      since.setUTCDate(since.getUTCDate() - 60);
+
+      const { data: hist, error: histErr } = await client
+        .from("asin_history")
+        .select("created_at, bsr, price, review_count, rating, availability")
+        .eq("user_id", userId)
+        .eq("asin_data_id", asinId)
+        .gte("created_at", since.toISOString())
+        .order("created_at", { ascending: true });
+
+      if (histErr) continue;
+
+      // Group by day, last record per day
+      const byDay = new Map<string, any>();
+      for (const h of hist || []) {
+        const k = parseDateKeyFromIso(h.created_at);
+        const prev = byDay.get(k);
+        if (!prev || new Date(h.created_at) > new Date(prev.created_at)) byDay.set(k, h);
       }
 
-      const todayKey = toDateKey(new Date());
+      // Build arrays ordered by day
+      const days = Array.from(byDay.keys()).sort();
+      const bsrSeries = days
+        .map((d) => {
+          const v = Number(byDay.get(d)?.bsr);
+          return Number.isFinite(v) && v > 0 ? v : null;
+        })
+        .filter((v): v is number => v != null) as number[];
+      const priceSeries = days
+        .map((d) => {
+          const v = Number(byDay.get(d)?.price);
+          return Number.isFinite(v) && v > 0 ? v : null;
+        })
+        .filter((v): v is number => v != null) as number[];
 
-      for (const row of asins || []) {
-        const asinId = row.id as string;
-        // last 60 days of history
-        const since = new Date();
-        since.setUTCDate(since.getUTCDate() - 60);
-
-        const { data: hist, error: histErr } = await client
-          .from("asin_history")
-          .select("created_at, bsr, price, review_count, rating, availability")
-          .eq("user_id", userId)
-          .eq("asin_data_id", asinId)
-          .gte("created_at", since.toISOString())
-          .order("created_at", { ascending: true });
-        if (histErr) continue;
-
-        // Group by day, last record per day
-        const byDay = new Map<string, any>();
-        for (const h of hist || []) {
-          const k = parseDateKeyFromIso(h.created_at);
-          const prev = byDay.get(k);
-          if (!prev || new Date(h.created_at) > new Date(prev.created_at)) byDay.set(k, h);
+      // Write today's daily metrics if present
+      const todayRec = byDay.get(todayKey);
+      if (todayRec) {
+        // Estimate revenue bounds: very rough if price present
+        const price = Number(todayRec.price);
+        const bsrNum = Number(todayRec.bsr);
+        let salesLow: number | null = null;
+        let salesHigh: number | null = null;
+        if (Number.isFinite(bsrNum) && bsrNum > 0) {
+          // heuristic: inverse rank power-law — purely indicative
+          salesLow = Math.max(0, Math.round(1200 / Math.pow(bsrNum, 0.6)));
+          salesHigh = Math.max(salesLow, Math.round(2200 / Math.pow(bsrNum, 0.6)));
         }
-
-        // Build arrays ordered by day
-        const days = Array.from(byDay.keys()).sort();
-
-        // Write today's daily metrics if present
-        const todayRec = byDay.get(todayKey);
-        if (todayRec) {
-          const priceNum = Number(todayRec.price);
-          const bsrNum = Number(todayRec.bsr);
-          let salesLow: number | null = null;
-          let salesHigh: number | null = null;
-          if (Number.isFinite(bsrNum) && bsrNum > 0) {
-            salesLow = Math.max(0, Math.round(1200 / Math.pow(bsrNum, 0.6)));
-            salesHigh = Math.max(salesLow, Math.round(2200 / Math.pow(bsrNum, 0.6)));
-          }
-          const revenueLow = Number.isFinite(priceNum) && salesLow != null ? Number((priceNum * salesLow).toFixed(2)) : null;
-          const revenueHigh = Number.isFinite(priceNum) && salesHigh != null ? Number((priceNum * salesHigh).toFixed(2)) : null;
-
-          await client
-            .from("asin_daily_metrics")
-            .upsert(
-              [{
-                user_id: userId,
-                asin_data_id: asinId,
-                asin: row.asin,
-                country: row.country || "com",
-                day: todayKey,
-                bsr: Number.isFinite(bsrNum) ? bsrNum : null,
-                price: Number.isFinite(priceNum) ? priceNum : null,
-                review_count: Number(todayRec.review_count) || null,
-                rating: Number(todayRec.rating) || null,
-                availability_code: todayRec.availability === true ? "IN_STOCK" : null,
-                stock_status: null,
-                sales_est_low: salesLow,
-                sales_est_high: salesHigh,
-                revenue_est_low: revenueLow,
-                revenue_est_high: revenueHigh,
-              }],
-              { onConflict: "asin_data_id, day" },
-            );
-        }
-
-        // Compute performance snapshot for today using last 30/60 days
-        const last30Days = days.slice(-30);
-        const bsr30 = last30Days.map((d) => Number(byDay.get(d)?.bsr)).filter((v) => Number.isFinite(v) && v > 0) as number[];
-        const price30 = last30Days.map((d) => Number(byDay.get(d)?.price)).filter((v) => Number.isFinite(v) && v > 0) as number[];
-
-        const allBsr = days.map((d) => Number(byDay.get(d)?.bsr)).filter((v) => Number.isFinite(v) && v > 0) as number[];
-        const minEver = allBsr.length ? Math.min(...allBsr) : null;
-        const maxEver = allBsr.length ? Math.max(...allBsr) : null;
-        const curr = allBsr.length ? allBsr[allBsr.length - 1] : null;
-
-        let qi: number | null = null;
-        if (minEver != null && maxEver != null && curr != null && maxEver > minEver) {
-          const r = (maxEver - curr) / (maxEver - minEver);
-          qi = Math.round(clamp01(r) * 100);
-        }
-
-        // Normalize BSR over last30 to [0,1] window
-        let vol30: number | null = null;
-        let mom7: number | null = null;
-        let elasticity: number | null = null;
-        let pct: number | null = null;
-        if (bsr30.length >= 5) {
-          const bMin = Math.min(...bsr30);
-          const bMax = Math.max(...bsr30);
-          const norm = bsr30.map((v) => (bMax > bMin ? (v - bMin) / (bMax - bMin) : 0.5));
-          vol30 = Number(stddev(norm).toFixed(4));
-          const window = norm.slice(-7);
-          if (window.length >= 2) {
-            const xs = Array.from({ length: window.length }, (_, i) => i);
-            const s = linRegSlope(xs, window);
-            mom7 = s != null ? Number(s.toFixed(4)) : null; // negative slope means improving rank
-          }
-          if (norm.length > 1) {
-            const currN = norm[norm.length - 1];
-            pct = Number((1 - currN).toFixed(4)); // 1 is best in window
-          }
-        }
-
-        if (bsr30.length >= 5 && price30.length >= 5) {
-          const bMin = Math.min(...bsr30);
-          const bMax = Math.max(...bsr30);
-          const normB = bsr30.map((v) => (bMax > bMin ? (v - bMin) / (bMax - bMin) : 0.5));
-          const xs = price30;
-          const ys = normB.slice(-xs.length); // align lengths defensively
-          const slope = linRegSlope(xs.map((_, i) => xs[i]), ys);
-          elasticity = slope != null ? Number(slope.toFixed(4)) : null; // +ve means higher price -> worse rank
-        }
+        const revenueLow = Number.isFinite(price) && salesLow != null ? Number((price * salesLow).toFixed(2)) : null;
+        const revenueHigh = Number.isFinite(price) && salesHigh != null ? Number((price * salesHigh).toFixed(2)) : null;
 
         await client
-          .from("performance_snapshots")
+          .from("asin_daily_metrics")
           .upsert(
             [{
               user_id: userId,
@@ -201,39 +146,93 @@ serve(async (req: Request) => {
               asin: row.asin,
               country: row.country || "com",
               day: todayKey,
-              qi_score: qi,
-              baseline_percentile: pct,
-              volatility_30: vol30,
-              momentum_7: mom7,
-              elasticity_est: elasticity,
-              notes: null,
+              bsr: Number.isFinite(bsrNum) ? bsrNum : null,
+              price: Number.isFinite(price) ? price : null,
+              review_count: Number(todayRec.review_count) || null,
+              rating: Number(todayRec.rating) || null,
+              availability_code: todayRec.availability === true ? "IN_STOCK" : null,
+              stock_status: null,
+              sales_est_low: salesLow,
+              sales_est_high: salesHigh,
+              revenue_est_low: revenueLow,
+              revenue_est_high: revenueHigh,
             }],
             { onConflict: "asin_data_id, day" },
           );
       }
-    }
 
-    // Determine which users to process
-    let userIds: string[] = [];
-    if (inputUserId) {
-      userIds = [inputUserId];
-    } else {
-      // process all distinct users that have asin_data
-      const { data: rows, error } = await client
-        .from("asin_data")
-        .select("user_id")
-        .limit(10000);
-      if (error) {
-        return new Response(JSON.stringify({ success: false, error: error.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      // Compute performance snapshot for today using last 30/60 days
+      const last30Days = days.slice(-30);
+      const bsr30 = last30Days.map((d) => Number(byDay.get(d)?.bsr)).filter((v) => Number.isFinite(v) && v > 0) as number[];
+      const price30 = last30Days.map((d) => Number(byDay.get(d)?.price)).filter((v) => Number.isFinite(v) && v > 0) as number[];
+
+      const allBsr = days.map((d) => Number(byDay.get(d)?.bsr)).filter((v) => Number.isFinite(v) && v > 0) as number[];
+      const minEver = allBsr.length ? Math.min(...allBsr) : null;
+      const maxEver = allBsr.length ? Math.max(...allBsr) : null;
+      const curr = allBsr.length ? allBsr[allBsr.length - 1] : null;
+
+      let qi: number | null = null;
+      if (minEver != null && maxEver != null && curr != null && maxEver > minEver) {
+        const r = (maxEver - curr) / (maxEver - minEver);
+        qi = Math.round(clamp01(r) * 100);
       }
-      userIds = Array.from(new Set((rows || []).map((r: any) => r.user_id).filter(Boolean)));
+
+      // Normalize BSR over last30 to [0,1] window
+      let vol30: number | null = null;
+      let mom7: number | null = null;
+      let elasticity: number | null = null;
+      let pct: number | null = null;
+      if (bsr30.length >= 5) {
+        const bMin = Math.min(...bsr30);
+        const bMax = Math.max(...bsr30);
+        const norm = bsr30.map((v) => (bMax > bMin ? (v - bMin) / (bMax - bMin) : 0.5));
+        vol30 = Number(stddev(norm).toFixed(4));
+        // momentum over last 7 points (or fewer if not available)
+        const window = norm.slice(-7);
+        if (window.length >= 2) {
+          // slope by index (0..k)
+          const xs = Array.from({ length: window.length }, (_, i) => i);
+          const s = linRegSlope(xs, window);
+          mom7 = s != null ? Number(s.toFixed(4)) : null; // negative slope means improving rank
+        }
+        if (norm.length > 1) {
+          const currN = norm[norm.length - 1];
+          pct = Number((1 - currN).toFixed(4)); // 1 is best in window
+        }
+      }
+
+      if (bsr30.length >= 5 && price30.length >= 5) {
+        // compute slope of (price -> normalized bsr) over last 30
+        const bMin = Math.min(...bsr30);
+        const bMax = Math.max(...bsr30);
+        const normB = bsr30.map((v) => (bMax > bMin ? (v - bMin) / (bMax - bMin) : 0.5));
+        const xs = price30;
+        const ys = normB.slice(-xs.length); // align lengths defensively
+        const slope = linRegSlope(xs.map((_, i) => xs[i]), ys);
+        elasticity = slope != null ? Number(slope.toFixed(4)) : null; // +ve means higher price -> worse rank
+      }
+
+      await client
+        .from("performance_snapshots")
+        .upsert(
+          [{
+            user_id: userId,
+            asin_data_id: asinId,
+            asin: row.asin,
+            country: row.country || "com",
+            day: todayKey,
+            qi_score: qi,
+            baseline_percentile: pct,
+            volatility_30: vol30,
+            momentum_7: mom7,
+            elasticity_est: elasticity,
+            notes: null,
+          }],
+          { onConflict: "asin_data_id, day" },
+        );
     }
 
-    for (const uid of userIds) {
-      await computeForUser(uid);
-    }
-
-    return new Response(JSON.stringify({ success: true, processedUsers: userIds.length }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     return new Response(JSON.stringify({ success: false, error: String(e?.message || e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }

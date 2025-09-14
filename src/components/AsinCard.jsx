@@ -1,5 +1,5 @@
 import React from 'react';
-import { Star, TrendingUp, DollarSign, RefreshCcw, Trash2, Loader2, LineChart, Edit, BarChart2, Clock, BookOpen, Calendar, MessageCircle, PackageCheck, PackageX, History, Award } from 'lucide-react';
+import { Star, TrendingUp, DollarSign, RefreshCcw, Trash2, Loader2, LineChart, Edit, BarChart2, Clock, BookOpen, Calendar, MessageCircle, PackageCheck, PackageX, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { calculateSalesFromBsr, calculateIncome } from '@/lib/incomeCalculator';
 import { estimateRoyalty } from '@/lib/royaltyEstimator';
@@ -79,21 +79,7 @@ const AsinCard = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart, onE
     return new Intl.NumberFormat('it-IT').format(num);
   };
 
-  // QI badge styling helpers
-  const qiScore = trend?.qi?.score;
-  const snapQi = typeof snapshot?.qi_score === 'number' ? snapshot.qi_score : null;
-  const snapMo = typeof snapshot?.momentum_7 === 'number' ? snapshot.momentum_7 : null;
-  const snapVol = typeof snapshot?.volatility_30 === 'number' ? snapshot.volatility_30 : null;
-  const qiMin = trend?.qi?.min;
-  const qiMax = trend?.qi?.max;
-  const qiCurr = trend?.qi?.current;
-  const qiClass = (s) => {
-    if (!(typeof s === 'number') || !isFinite(s)) return 'bg-white/5 text-white/70 border-white/10';
-    if (s >= 80) return 'bg-emerald-500/15 text-emerald-200 border-emerald-400/30';
-    if (s >= 60) return 'bg-lime-500/15 text-lime-200 border-lime-400/30';
-    if (s >= 40) return 'bg-amber-500/15 text-amber-200 border-amber-400/30';
-    return 'bg-rose-500/15 text-rose-200 border-rose-400/30';
-  };
+  // QI/Mo/Vol helpers removed; tags hidden per request
 
   // (Per-ASIN notification removed for a steadier layout)
 
@@ -215,18 +201,6 @@ React.useEffect(() => {
                  <CircularProgress size={22} thickness={2} />
                </div>
              )}
-             {/* QI badge (bottom-left, subtle gamified chip) */}
-             {typeof qiScore === 'number' && isFinite(qiScore) && (
-               <div
-                 className={`absolute bottom-1 left-1 z-10 px-1.5 py-0.5 rounded-full text-[10px] leading-none border shadow-sm backdrop-blur-sm ${qiClass(qiScore)}`}
-                 title={`QI ${qiScore} • min ${qiMin ? new Intl.NumberFormat('it-IT').format(qiMin) : '—'} • att ${qiCurr ? new Intl.NumberFormat('it-IT').format(qiCurr) : '—'} • max ${qiMax ? new Intl.NumberFormat('it-IT').format(qiMax) : '—'}`}
-               >
-                 <span className="inline-flex items-center gap-1">
-                   <Award className="w-3 h-3 opacity-80" />
-                   <span className="font-semibold">QI {qiScore}</span>
-                 </span>
-               </div>
-             )}
              {/* elegant moving sheen */}
              <div aria-hidden="true" className="pointer-events-none absolute inset-0">
                <div className="absolute top-0 left-0 h-full w-1/2 -translate-x-[60%] md:group-hover/cover:translate-x-[180%] transition-transform duration-700 ease-in-out bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 blur-[1px]" />
@@ -251,22 +225,10 @@ React.useEffect(() => {
           <p className="text-sm text-muted-foreground mb-1">{data.author || 'Autore non disponibile'}</p>
           <p className="text-xs text-muted-foreground/70">ASIN: {data.asin}</p>
           <div className={`flex items-center gap-1.5 text-xs mt-1 ${availabilityClass}`}>
-  <AvailabilityIcon className="w-3.5 h-3.5" />
-  <span className="font-semibold">{data.stock_status || 'Sconosciuto'}</span>
+            <AvailabilityIcon className="w-3.5 h-3.5" />
+            <span className="font-semibold">{data.stock_status || 'Sconosciuto'}</span>
           </div>
-          {(snapQi != null || snapMo != null || snapVol != null) && (
-            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-              {snapQi != null && (
-                <span className={`px-1.5 py-0.5 rounded-full border text-[10px] ${qiClass(snapQi)}`}>QI {snapQi}</span>
-              )}
-              {snapMo != null && (
-                <span className={`px-1.5 py-0.5 rounded-full border text-[10px] ${snapMo < -0.02 ? 'bg-emerald-500/15 text-emerald-200 border-emerald-400/30' : snapMo > 0.02 ? 'bg-rose-500/15 text-rose-200 border-rose-400/30' : 'bg-white/5 text-white/70 border-white/10'}`}>Mo {snapMo.toFixed(2)}</span>
-              )}
-              {snapVol != null && (
-                <span className={`px-1.5 py-0.5 rounded-full border text-[10px] ${snapVol < 0.12 ? 'bg-emerald-500/15 text-emerald-200 border-emerald-400/30' : snapVol > 0.25 ? 'bg-rose-500/15 text-rose-200 border-rose-400/30' : 'bg-amber-500/15 text-amber-200 border-amber-400/30'}`}>Vol {snapVol.toFixed(2)}</span>
-              )}
-            </div>
-          )}
+          {/* Snapshot chips (QI/Mo/Vol) intentionally hidden */}
         </div>
       </div>
 
