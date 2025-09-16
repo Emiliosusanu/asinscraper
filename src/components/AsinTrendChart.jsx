@@ -1149,6 +1149,16 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                     tickFormatter={fmtTick}
                     axisLine={false}
                     tickLine={false}
+                    allowDecimals={false}
+                    allowDataOverflow
+                    domain={[
+                      (dataMin) => Math.max(0, Math.floor((Number.isFinite(dataMin) ? dataMin : 0) * 0.95)),
+                      (dataMax) => {
+                        const v = Number.isFinite(dataMax) ? dataMax : 1;
+                        const top = Math.ceil(v * 1.05);
+                        return Math.max(1, top);
+                      }
+                    ]}
                     width={isMobile ? 36 : 48}
                   />
                   {showPrice && (
@@ -1167,13 +1177,13 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                   )}
                   <Tooltip content={<CustomTooltip currency={currency} />} cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 }} />
                   <Area yAxisId="left" type="monotone" dataKey="BSR" stroke="none" fill="url(#gradBSR)" fillOpacity={isMobile ? 0.12 : 0.18} isAnimationActive animationDuration={700} animationEasing="ease-out" />
-                  <Area yAxisId="right" type="monotone" dataKey="Recensioni" stroke="none" fill="url(#gradREV)" fillOpacity={isMobile ? 0.08 : 0.1} isAnimationActive animationDuration={650} animationEasing="ease-out" />
+                  <Area yAxisId="right" type="linear" dataKey="Recensioni" stroke="none" fill="url(#gradREV)" fillOpacity={isMobile ? 0.08 : 0.1} isAnimationActive animationDuration={650} animationEasing="ease-out" />
                   {showPrice && (
                     <Area yAxisId="price" type="monotone" dataKey="Prezzo" stroke="none" fill="url(#gradPRICE)" fillOpacity={isMobile ? 0.1 : 0.12} isAnimationActive animationDuration={600} animationEasing="ease-out" />
                   )}
                   {/* glow underlines with animated pulsing filters (conditional by Neon mode) */}
                   <Line yAxisId="left" type="monotone" dataKey="BSR" stroke="url(#strokeBSR)" strokeOpacity={0.3} strokeWidth={isMobile ? 3.5 : 5} dot={false} activeDot={false} animationDuration={650} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" filter={neonMode ? 'url(#pulseLineBSR)' : 'url(#glowBSR)'} />
-                  <Line yAxisId="right" type="monotone" dataKey="Recensioni" stroke="url(#strokeREV)" strokeOpacity={0.24} strokeWidth={isMobile ? 3 : 4.5} dot={false} activeDot={false} animationDuration={650} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" filter={neonMode ? 'url(#pulseLineREV)' : 'url(#glowREV)'} />
+                  <Line yAxisId="right" type="linear" dataKey="Recensioni" stroke="url(#strokeREV)" strokeOpacity={0.24} strokeWidth={isMobile ? 3 : 4.5} dot={false} activeDot={false} animationDuration={650} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" filter={neonMode ? 'url(#pulseLineREV)' : 'url(#glowREV)'} />
                   {showPrice && (
                     <Line yAxisId="price" type="monotone" dataKey="Prezzo" stroke="url(#strokePRICE)" strokeOpacity={0.22} strokeWidth={isMobile ? 3 : 4.5} dot={false} activeDot={false} animationDuration={600} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" filter={neonMode ? 'url(#pulseLinePRICE)' : 'url(#glowPRICE)'} />
                   )}
@@ -1181,7 +1191,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                   {/* Color segments: red when BSR increases (worse), green when BSR decreases (better) */}
                   <Line yAxisId="left" type="monotone" dataKey="BSR_UP" stroke="#ef4444" strokeOpacity={isMobile ? 0.9 : 0.95} strokeWidth={isMobile ? 1.4 : 2.6} dot={false} activeDot={false} connectNulls={false} legendType="none" isAnimationActive animationDuration={550} animationEasing="ease-out" strokeLinecap="round" strokeLinejoin="round" />
                   <Line yAxisId="left" type="monotone" dataKey="BSR_DOWN" stroke="#10b981" strokeOpacity={isMobile ? 0.9 : 0.95} strokeWidth={isMobile ? 1.4 : 2.6} dot={false} activeDot={false} connectNulls={false} legendType="none" isAnimationActive animationDuration={550} animationEasing="ease-out" strokeLinecap="round" strokeLinejoin="round" />
-                  <Line yAxisId="right" type="monotone" dataKey="Recensioni" stroke="#818cf8" strokeWidth={isMobile ? 1.4 : 2} dot={isMobile ? false : { r: 2 }} activeDot={isMobile ? false : { r: 6 }} animationDuration={700} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" />
+                  <Line yAxisId="right" type="linear" dataKey="Recensioni" stroke="#818cf8" strokeWidth={isMobile ? 1.4 : 2} dot={isMobile ? false : { r: 2 }} activeDot={isMobile ? false : { r: 6 }} animationDuration={700} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" />
                   {showPrice && (
                     <Line yAxisId="price" type="monotone" dataKey="Prezzo" stroke="#f59e0b" strokeWidth={isMobile ? 1.4 : 2} dot={isMobile ? false : { r: 2 }} activeDot={isMobile ? false : { r: 6 }} animationDuration={650} animationEasing="ease-out" connectNulls strokeLinecap="round" strokeLinejoin="round" />
                   )}

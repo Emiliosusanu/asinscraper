@@ -65,22 +65,42 @@ const useAsinTrends = (asins) => {
       }
 
       const current = relevantHistory[0];
-      const previous = relevantHistory[1];
+      // Find the last different value for each metric to avoid flipping to 'stable' when duplicate points are inserted
+      const findPrevDifferent = (arr, key, isPositive = true) => {
+        const curr = Number(arr?.[0]?.[key]);
+        if (!Number.isFinite(curr)) return null;
+        for (let i = 1; i < arr.length; i++) {
+          const v = Number(arr[i]?.[key]);
+          if (!Number.isFinite(v)) continue;
+          if (v !== curr) return v;
+        }
+        // fallback to immediate previous even if equal
+        const fallback = Number(arr?.[1]?.[key]);
+        return Number.isFinite(fallback) ? fallback : null;
+      };
 
-      const bsrTrend = calculateTrend(current.bsr, previous.bsr, true);
-      const reviewsTrend = calculateTrend(current.review_count, previous.review_count);
-      const priceTrend = calculateTrend(current.price, previous.price);
+      const prevBsr = findPrevDifferent(relevantHistory, 'bsr');
+      const prevReviews = findPrevDifferent(relevantHistory, 'review_count');
+      const prevPrice = findPrevDifferent(relevantHistory, 'price');
+
+      const bsrTrend = calculateTrend(current.bsr, prevBsr, true);
+      const reviewsTrend = calculateTrend(current.review_count, prevReviews);
+      const priceTrend = calculateTrend(current.price, prevPrice);
 
       const currentSales = calculateSalesFromBsr(current.bsr);
       const effectiveRoyalty = (asin.royalty && asin.royalty > 0) ? asin.royalty : estimateRoyalty(asin);
       const currentIncome = calculateIncome(currentSales, effectiveRoyalty);
       const currentAvgIncome = (currentIncome.monthly[0] + currentIncome.monthly[1]) / 2;
 
-      const previousSales = calculateSalesFromBsr(previous.bsr);
+      const previousBsr = prevBsr;
+      const previousPrice = prevPrice;
+      const previousReviews = prevReviews;
+
+      const previousSales = calculateSalesFromBsr(previousBsr);
       // Use previous price for royalty estimate if present
       const effRoyaltyPrev = (asin.royalty && asin.royalty > 0)
         ? asin.royalty
-        : estimateRoyalty({ ...asin, price: (previous.price ?? asin.price) });
+        : estimateRoyalty({ ...asin, price: (previousPrice ?? asin.price) });
       const previousIncome = calculateIncome(previousSales, effRoyaltyPrev);
       const previousAvgIncome = (previousIncome.monthly[0] + previousIncome.monthly[1]) / 2;
 
@@ -88,15 +108,15 @@ const useAsinTrends = (asins) => {
 
       // Break-even ACOS = (royalty / price) * 100
       const currentBE = (effectiveRoyalty && current.price) ? (effectiveRoyalty / current.price) * 100 : null;
-      const previousBE = (effectiveRoyalty && previous.price) ? (effectiveRoyalty / previous.price) * 100 : null;
+      const previousBE = (effectiveRoyalty && previousPrice) ? (effectiveRoyalty / previousPrice) * 100 : null;
       const acosTrend = calculateTrend(currentBE, previousBE);
 
       // Build concise summary since last scrape (avoid redundancy)
       const summaryItems = [];
       // BSR change (lower is better). Use % change threshold 1% and absolute >= 5
-      if (previous.bsr && current.bsr) {
-        const delta = current.bsr - previous.bsr; // positive = worse
-        const rel = previous.bsr ? Math.abs(delta / previous.bsr) : 0;
+      if (previousBsr && current.bsr) {
+        const delta = current.bsr - previousBsr; // positive = worse
+        const rel = previousBsr ? Math.abs(delta / previousBsr) : 0;
         if (Math.abs(delta) >= 5 && rel >= 0.01) {
           if (delta < 0) {
             summaryItems.push(`BSR migliorato di ${Math.abs((rel*100)).toFixed(1)}%`);
@@ -106,12 +126,12 @@ const useAsinTrends = (asins) => {
         }
       }
       // Reviews gained
-      const revDelta = (current.review_count || 0) - (previous.review_count || 0);
+      const revDelta = (current.review_count || 0) - (previousReviews || 0);
       if (revDelta > 0) {
         summaryItems.push(`+${revDelta} recensioni`);
       }
       // Price change
-      const priceDelta = Number(current.price || 0) - Number(previous.price || 0);
+      const priceDelta = Number(current.price || 0) - Number(previousPrice || 0);
       if (Math.abs(priceDelta) >= 0.01) {
         const dir = priceDelta > 0 ? '↑' : '↓';
         summaryItems.push(`Prezzo ${dir} €${Math.abs(priceDelta).toFixed(2)}`);

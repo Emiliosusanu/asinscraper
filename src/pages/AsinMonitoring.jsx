@@ -146,6 +146,7 @@ const AsinMonitoring = () => {
   const channelRef = useRef(null); // current realtime channel
   const refreshTrendsRef = useRef(refreshTrends);
   const fetchTrackedAsinsRef = useRef(null);
+  const toastCooldownRef = useRef(new Map()); // asin_id -> lastToastTs
 
   const fetchTrackedAsins = useCallback(async () => {
     if (!user) return;
@@ -200,7 +201,7 @@ useEffect(() => {
         });
       } else if (payload.eventType === 'UPDATE') {
         setTrackedAsins(curr => curr.map(a => (a.id === payload.new.id ? { ...a, ...payload.new } : a)));
-        toast({ title: 'Dati aggiornati!', description: `I dati per ${payload.new.title} sono stati aggiornati.` });
+        // Avoid duplicate toasts here: details enrichment also triggers UPDATE without meaningful metric changes
       } else if (payload.eventType === 'DELETE') {
         setTrackedAsins(curr => curr.filter(a => a.id !== payload.old.id));
       }
@@ -217,6 +218,18 @@ useEffect(() => {
     (payload) => {
       if (payload.new?.user_id !== user.id) return;
       refreshTrendsRef.current?.();
+      // Show a single consolidated toast when a real history point arrives
+      try {
+        const asinId = payload.new.asin_data_id;
+        const now = Date.now();
+        const last = toastCooldownRef.current.get(asinId) || 0;
+        if (now - last > 4000) {
+          toastCooldownRef.current.set(asinId, now);
+          const a = trackedAsins.find(x => x.id === asinId);
+          const title = a?.title || 'ASIN';
+          toast({ title: 'Dati aggiornati!', description: `I dati per ${title} sono stati aggiornati.` });
+        }
+      } catch (_) {}
     }
   );
 
@@ -302,7 +315,8 @@ useEffect(() => {
     // Skip if already running
     if (refreshingAsin === asinToRefresh.asin || inProgressAsins.has(asinToRefresh.asin)) return;
     setRefreshingAsin(asinToRefresh.asin);
-    await scrapeAndProcessAsin(asinToRefresh.asin, asinToRefresh.country, user);
+    // Suppress service-level success toast to avoid duplicate toasts with realtime updates
+    await scrapeAndProcessAsin(asinToRefresh.asin, asinToRefresh.country, user, { suppressToast: true });
     setRefreshingAsin(null);
   };
 

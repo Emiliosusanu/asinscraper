@@ -115,7 +115,8 @@ export async function runScrapeWithRetry(
  * API pre-esistente per una singola card (manteniamo i toast).
  * Ora usa runScrapeWithRetry sotto al cofano.
  */
-export const scrapeAndProcessAsin = async (asinToScrape, countryCode, user) => {
+export const scrapeAndProcessAsin = async (asinToScrape, countryCode, user, opts = {}) => {
+  const suppressToast = !!opts.suppressToast;
   try {
     const functionResponse = await runScrapeDeduped({
       asin: asinToScrape,
@@ -152,10 +153,12 @@ export const scrapeAndProcessAsin = async (asinToScrape, countryCode, user) => {
       console.warn('enrich details failed', e?.message || e);
     }
 
-    if (functionResponse.isNew) {
-      toast({ title: 'ASIN Aggiunto!', description: `${processedData.title} è ora monitorato.` });
-    } else {
-      toast({ title: 'ASIN Aggiornato!', description: `Dati per ${processedData.title} aggiornati.` });
+    if (!suppressToast) {
+      if (functionResponse.isNew) {
+        toast({ title: 'ASIN Aggiunto!', description: `${processedData.title} è ora monitorato.` });
+      } else {
+        toast({ title: 'ASIN Aggiornato!', description: `Dati per ${processedData.title} aggiornati.` });
+      }
     }
 
     return processedData;
