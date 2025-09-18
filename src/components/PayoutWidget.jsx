@@ -4,6 +4,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const fmtEUR = (v) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(v || 0);
+const fmtCode = (code, v) => `${new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(v || 0)} ${String(code || '').toUpperCase()}`;
 const monthLabelIT = (y, m) => new Date(y, m, 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
 const pad2 = (n) => String(n).padStart(2, '0');
 const fmtYMD = (d) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
@@ -123,6 +124,8 @@ const PayoutWidget = () => {
             used[cur] = rate;
           }
         }
+        // Keep original USD subtotal for display alongside EUR total when present
+        const usdSubtotal = totalsByCur['USD'] || 0;
         return {
           key: k,
           payoutDate: s.payoutDate,
@@ -130,6 +133,7 @@ const PayoutWidget = () => {
           totalEUR: convertedEUR,
           count: (byMonth[k]?.count || 0),
           otherCurrencies: other,
+          usdSubtotal,
         };
       });
       setRows(rows);
@@ -193,6 +197,7 @@ const PayoutWidget = () => {
         const byKey = Object.fromEntries(rows.map(r => [r.key, r]));
         const unpaidKeys = [thisMonthKey, prev1Key, ...(includePrev2 ? [prev2Key] : [])];
         const pipelineTotal = unpaidKeys.reduce((acc, k) => acc + (byKey[k]?.totalEUR || 0), 0);
+        const pipelineUsd = unpaidKeys.reduce((acc, k) => acc + (byKey[k]?.usdSubtotal || 0), 0);
         return (
           <div className="mt-3">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -204,6 +209,9 @@ const PayoutWidget = () => {
             </div>
             <div className="mt-2 text-sm text-foreground/90">
               Totale non ancora pagato (EUR): <span className="text-emerald-300 font-semibold">{fmtEUR(pipelineTotal)}</span>
+              {pipelineUsd > 0 && (
+                <span className="ml-1 text-emerald-200/80">+ {fmtCode('USD', pipelineUsd)}</span>
+              )}
               <span className="text-[11px] text-muted-foreground ml-2">({unpaidKeys.join(' • ')})</span>
             </div>
           </div>
@@ -231,7 +239,12 @@ const PayoutWidget = () => {
               <p className="text-[11px] text-gray-400 mt-1">Mese pagato</p>
               <p className="text-sm text-gray-200 font-medium">{targetLbl}</p>
               <p className="text-[11px] text-gray-400 mt-1">Totale (EUR)</p>
-              <p className="text-emerald-300 font-semibold">{fmtEUR(r.totalEUR)}</p>
+              <p className="text-emerald-300 font-semibold">
+                {fmtEUR(r.totalEUR)}
+                {r.usdSubtotal > 0 && (
+                  <span className="ml-1 text-emerald-200/80">+ {fmtCode('USD', r.usdSubtotal)}</span>
+                )}
+              </p>
               {showDetails && (
                 <div className="mt-1 space-y-0.5">
                   <p className="text-[11px] text-gray-500">Voci conteggiate: {r.count}</p>
