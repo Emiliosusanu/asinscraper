@@ -99,6 +99,7 @@ export const SmartNotificationsDrawer: React.FC = () => {
   const [summary, setSummary] = useState<NotificationsSummary | null>(null);
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [learning, setLearning] = useState<any>(null);
 
   const loadAll = useCallback(async () => {
     if (!user) return;
@@ -125,6 +126,55 @@ export const SmartNotificationsDrawer: React.FC = () => {
     if (open) loadAll();
   }, [open, loadAll]);
 
+  // Load lightweight learning data from localStorage and keep in sync
+  useEffect(() => {
+    const load = () => {
+      try {
+        const raw = localStorage.getItem('notifLearningV1');
+        setLearning(raw ? JSON.parse(raw) : {});
+      } catch (_) { setLearning({}); }
+    };
+    load();
+    const onUpd = () => load();
+    window.addEventListener('notifLearningUpdated', onUpd as EventListener);
+    return () => window.removeEventListener('notifLearningUpdated', onUpd as EventListener);
+  }, []);
+
+  // Compute a relevance score per item using user feedback (drivers/asin/kind) + confidence
+  const rankedItems = useMemo(() => {
+    const L = learning || {};
+    const diff = (pos?: number, neg?: number) => (Number(pos||0) - 1.2 * Number(neg||0));
+    const confW = (c?: 'high'|'medium'|'low') => c === 'high' ? 1 : c === 'medium' ? 0.7 : 0.5;
+    const arr = (items || []).map((n) => {
+      let s = 0;
+      // driver contributions
+      for (const d of (n.drivers || [])) {
+        const stats = L?.driver?.[String(d)] || { pos: 0, neg: 0 };
+        s += diff(stats.pos, stats.neg) * 10;
+      }
+      // asin contribution
+      if (n.asin) {
+        const a = L?.asin?.[String(n.asin)] || { pos: 0, neg: 0 };
+        s += diff(a.pos, a.neg) * 8;
+      }
+      // kind/status contribution
+      if (n.status) {
+        const k = L?.kind?.[String(n.status)] || { pos: 0, neg: 0 };
+        s += diff(k.pos, k.neg) * 6;
+      }
+      // confidence weight
+      s *= confW(n.confidence);
+      // small nudge for positive net impact if present
+      const imp = Number.isFinite(n.net_impact) ? Number(n.net_impact) : 0;
+      s += Math.max(-10, Math.min(10, imp)) * 0.5; // clamp +/-10%
+      // normalize to 0..100 around a 50 baseline
+      const score = Math.max(0, Math.min(100, Math.round(50 + s)));
+      const recommended = score >= 70;
+      return { ...n, _score: score, _recommended: recommended } as NotificationItem & { _score: number; _recommended: boolean };
+    });
+    return arr.sort((a, b) => (Number(b._recommended) - Number(a._recommended)) || (b._score - a._score) || (new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+  }, [items, learning]);
+
   const markHelpful = async (n: NotificationItem, sign: 'positive' | 'negative' = 'positive') => {
     try {
       const headers = await authHeaders();
@@ -138,6 +188,25 @@ export const SmartNotificationsDrawer: React.FC = () => {
         const t = await r.text();
         console.warn('feedback error', t);
       }
+    } catch (_) {}
+
+    try {
+      const raw = localStorage.getItem('notifLearningV1');
+      const L: any = raw ? JSON.parse(raw) : {};
+      const inc = (obj: any, k: string, key: 'pos' | 'neg') => {
+        if (!k) return;
+        obj[k] = obj[k] || { pos: 0, neg: 0 };
+        obj[k][key] = Number(obj[k][key] || 0) + 1;
+      };
+      const key: 'pos' | 'neg' = sign === 'negative' ? 'neg' : 'pos';
+      L.driver = L.driver || {};
+      for (const d of (n.drivers || [])) inc(L.driver, String(d), key);
+      L.asin = L.asin || {};
+      inc(L.asin, String(n.asin || ''), key);
+      L.kind = L.kind || {};
+      inc(L.kind, String(n.status || ''), key);
+      localStorage.setItem('notifLearningV1', JSON.stringify(L));
+      try { window.dispatchEvent(new Event('notifLearningUpdated')); } catch (_) {}
     } catch (_) {}
   };
 
@@ -178,14 +247,17 @@ export const SmartNotificationsDrawer: React.FC = () => {
         <div className="p-3 space-y-3 overflow-y-auto h-full">
           {error && <div className="text-sm text-red-300">{error}</div>}
           {loading && <div className="text-sm text-gray-300">Caricamento...</div>}
-          {!loading && items.length === 0 && (
+          {!loading && rankedItems.length === 0 && (
             <div className="text-sm text-gray-400">Nessun peggioramento recente.</div>
           )}
-          {items.map((n) => (
+          {rankedItems.map((n) => (
             <div key={n.id} className="rounded-lg border border-slate-700 bg-slate-800 p-3">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-semibold text-gray-200 truncate mr-2 flex items-center gap-2">
                   <span>{n.asin}</span>
+                  {n._recommended && (
+                    <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">Consigliato</span>
+                  )}
                   {n.details?.prev?.samples === 0 && (
                     <span className="text-[10px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/30">Nuovo</span>
                   )}
@@ -212,7 +284,9 @@ export const SmartNotificationsDrawer: React.FC = () => {
               </div>
               <div className="mt-2 text-[11px] text-gray-400">Copertura: {n.details?.coverageDays || 0} giorni • Campioni: prev {n.details?.prev?.samples || 0}, curr {n.details?.curr?.samples || 0}</div>
               <div className="mt-3 flex items-center justify-end gap-2">
+                <span className="text-[11px] text-gray-400">Score {Number((n as any)._score ?? 0)}</span>
                 <Button size="sm" variant="outline" className="border-slate-600 text-gray-200 hover:bg-slate-800" onClick={() => markHelpful(n, 'positive')}>Utile</Button>
+                <Button size="sm" variant="outline" className="border-slate-600 text-gray-200 hover:bg-slate-800" onClick={() => markHelpful(n, 'negative')}>Non utile</Button>
               </div>
             </div>
           ))}

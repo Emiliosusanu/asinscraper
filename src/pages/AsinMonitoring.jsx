@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, RefreshCw, LayoutGrid, List, Loader2, BookOpen, Filter, Target } from 'lucide-react';
+import { Plus, RefreshCw, LayoutGrid, List, Loader2, BookOpen, Filter, Target, Archive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
@@ -17,7 +17,7 @@ import AsinEventLogModal from '@/components/AsinEventLogModal';
 import useAsinTrends from '@/hooks/useAsinTrends';
 import useLocalStorage from '@/hooks/useLocalStorage';
 import usePerformanceSnapshots from '@/hooks/usePerformanceSnapshots';
-import { scrapeAndProcessAsin, deleteAsinAndHistory, processAllAsins } from '@/services/asinService';
+import { scrapeAndProcessAsin, deleteAsinAndHistory, processAllAsins, archiveAsin, unarchiveAsin } from '@/services/asinService';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -139,6 +139,7 @@ const AsinMonitoring = () => {
   const [filter, setFilter] = useState("");
   const [inProgressAsins, setInProgressAsins] = useState(new Set());
   const lastScrollTsRef = useRef(0);
+  const [showArchived, setShowArchived] = useLocalStorage('asinMonitoringShowArchived', false);
 
   
   const { trends, refreshTrends } = useAsinTrends(trackedAsins);
@@ -147,6 +148,22 @@ const AsinMonitoring = () => {
   const refreshTrendsRef = useRef(refreshTrends);
   const fetchTrackedAsinsRef = useRef(null);
   const toastCooldownRef = useRef(new Map()); // asin_id -> lastToastTs
+
+  const portfolioQi = useMemo(() => {
+    const items = (trackedAsins || [])
+      .filter(a => !a?.archived)
+      .filter(a => Number(a?.bsr) >= 1000); // ignore <1000 BSR (launch period / non-real)
+    const scores = items
+      .map(a => Number(trends?.[a.id]?.qi?.score))
+      .filter(v => Number.isFinite(v));
+    const n = scores.length;
+    if (!n) return null;
+    const avg = scores.reduce((s, v) => s + v, 0) / n; // 0..100
+    const sorted = [...scores].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const label = avg >= 70 ? 'Buono' : avg >= 45 ? 'Nella media' : 'Debole';
+    return { avg, median, count: n, label };
+  }, [trackedAsins, trends]);
 
   const fetchTrackedAsins = useCallback(async () => {
     if (!user) return;
@@ -296,8 +313,10 @@ useEffect(() => {
         return sortDir === 'asc' ? valA - valB : valB - valA;
     });
 
-    return sortedAsins.filter(item => item.title && item.title.toLowerCase().includes(filter.toLowerCase()));
-  }, [trackedAsins, sort, filter]);
+    return sortedAsins
+      .filter(item => (showArchived ? item.archived === true : item.archived !== true))
+      .filter(item => item.title && item.title.toLowerCase().includes(filter.toLowerCase()));
+  }, [trackedAsins, sort, filter, showArchived]);
   
   const handleAddAsin = async (asin, country) => {
     setIsAdding(true);
@@ -315,6 +334,11 @@ useEffect(() => {
     // Skip if already running
     if (refreshingAsin === asinToRefresh.asin || inProgressAsins.has(asinToRefresh.asin)) return;
     setRefreshingAsin(asinToRefresh.asin);
+    if (asinToRefresh.archived) {
+      toast({ title: 'ASIN archiviato', description: 'Ripristina per poter aggiornare i dati.' });
+      setRefreshingAsin(null);
+      return;
+    }
     // Suppress service-level success toast to avoid duplicate toasts with realtime updates
     await scrapeAndProcessAsin(asinToRefresh.asin, asinToRefresh.country, user, { suppressToast: true });
     setRefreshingAsin(null);
@@ -331,6 +355,7 @@ const handleRefreshAll = async () => {
     const seen = new Set();
     const items = [];
     for (const a of trackedAsins) {
+      if (a.archived) continue; // skip archived items in bulk refresh
       const key = `${a.asin}:${a.country || 'com'}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -408,6 +433,26 @@ const handleRefreshAll = async () => {
     refreshTrends();
   };
 
+  const handleArchive = async () => {
+    if (!asinToDelete) return;
+    const ok = await archiveAsin(asinToDelete);
+    if (ok) {
+      setTrackedAsins(curr => curr.map(a => (a.id === asinToDelete.id ? { ...a, archived: true, archived_at: new Date().toISOString() } : a)));
+    }
+    setIsDeleteDialogOpen(false);
+    setAsinToDelete(null);
+  };
+
+  const handleRestore = async () => {
+    if (!asinToDelete) return;
+    const ok = await unarchiveAsin(asinToDelete);
+    if (ok) {
+      setTrackedAsins(curr => curr.map(a => (a.id === asinToDelete.id ? { ...a, archived: false, archived_at: null } : a)));
+    }
+    setIsDeleteDialogOpen(false);
+    setAsinToDelete(null);
+  };
+
   return (
     <>
       <Helmet>
@@ -417,10 +462,25 @@ const handleRefreshAll = async () => {
       <div className="container mx-auto max-w-[1400px] xl:max-w-[1600px] 2xl:max-w-[1800px] pb-24 lg:pb-8">
 
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-semibold text-foreground">I tuoi ASIN ({filteredAndSortedAsins.length})</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-semibold text-foreground">I tuoi ASIN ({filteredAndSortedAsins.length})</h2>
+            {portfolioQi && (
+              <div className="hidden sm:flex items-center gap-2 px-2 py-1 rounded-full border border-border bg-muted/40" title={`${Math.round(portfolioQi.avg)}/100 • ${portfolioQi.label} • ${portfolioQi.count} libri`}>
+                <span className="text-xs text-muted-foreground">QI Portafoglio</span>
+                <div className="relative w-20 h-1.5 rounded-full overflow-hidden bg-gradient-to-r from-red-500 via-yellow-500 to-emerald-500/70">
+                  <div className="absolute inset-y-0 left-0 bg-white/70" style={{ width: `${Math.round(portfolioQi.avg)}%` }} />
+                </div>
+                <span className="text-xs font-semibold">{Math.round(portfolioQi.avg)}</span>
+                <span className="text-xs text-muted-foreground">{portfolioQi.label}</span>
+              </div>
+            )}
+          </div>
           <div className="flex gap-2">
             <Button size="xs" onClick={handleRefreshAll} variant="outline" className="border-border text-muted-foreground hover:bg-muted hover:text-foreground rounded-full px-3" disabled={isRefreshingAll}>
               {isRefreshingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            </Button>
+            <Button size="xs" onClick={() => setShowArchived(v => !v)} variant={showArchived ? 'default' : 'ghost'} className={showArchived ? 'bg-primary text-primary-foreground rounded-full' : 'text-muted-foreground rounded-full'}>
+              <Archive className="w-4 h-4 mr-1" /> {showArchived ? 'Archiviati' : 'Attivi'}
             </Button>
             <div className="bg-muted/50 p-1 rounded-full border border-border">
               <Button onClick={() => setViewMode('grid')} variant={viewMode === 'grid' ? 'default' : 'ghost'} size="xs" className={viewMode === 'grid' ? 'bg-primary text-primary-foreground rounded-full' : 'text-muted-foreground rounded-full'}>
@@ -516,14 +576,19 @@ const handleRefreshAll = async () => {
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Sei sicuro?</AlertDialogTitle>
+            <AlertDialogTitle>Gestisci ASIN</AlertDialogTitle>
             <AlertDialogDescription>
-              Questa azione non può essere annullata. Questo cancellerà permanentemente l'ASIN e tutti i suoi dati storici.
+              Scegli se archiviare (mantieni storico, rimuovi dal monitoraggio) o eliminare definitivamente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Annulla</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>Continua</AlertDialogAction>
+            {asinToDelete?.archived ? (
+              <AlertDialogAction onClick={handleRestore}>Ripristina</AlertDialogAction>
+            ) : (
+              <AlertDialogAction onClick={handleArchive}>Archivia</AlertDialogAction>
+            )}
+            <AlertDialogAction onClick={handleDelete}>Elimina</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

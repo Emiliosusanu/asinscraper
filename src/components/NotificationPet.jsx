@@ -41,6 +41,50 @@ const NotificationPet = () => {
   const danceTimerRef = React.useRef(null);
 
   const counts = payload?.counts || { better: 0, worse: 0, stable: 0 };
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = today.getMonth();
+  const dayKey = fmtYMD(today);
+  const payoutDate = computePayoutForMonth(y, m);
+  const isPayoutDay = today.toDateString() === payoutDate.toDateString();
+  const target = new Date(y, m - 2, 1);
+  const targetKey = `${target.getFullYear()}-${pad2(target.getMonth()+1)}`;
+  // --- Lightweight learning snapshot (local only) ---
+  const learning = React.useMemo(() => {
+    try {
+      const raw = localStorage.getItem('notifLearningV1');
+      return raw ? JSON.parse(raw) : {};
+    } catch (_) { return {}; }
+  }, [payload?.fingerprint]);
+
+  // Rank details with the same simple model as the drawer
+  const recommended = React.useMemo(() => {
+    const details = Array.isArray(payload?.details) ? payload.details : [];
+    if (!details.length) return [];
+    const L = learning || {};
+    const diff = (pos = 0, neg = 0) => (Number(pos||0) - 1.2 * Number(neg||0));
+    const confW = (c) => c === 'high' ? 1 : c === 'medium' ? 0.7 : 0.5;
+    const scoreOf = (n) => {
+      let s = 0;
+      for (const d of (n.drivers || [])) {
+        const st = L?.driver?.[String(d)] || { pos: 0, neg: 0 };
+        s += diff(st.pos, st.neg) * 10;
+      }
+      if (n.asin) {
+        const a = L?.asin?.[String(n.asin)] || { pos: 0, neg: 0 };
+        s += diff(a.pos, a.neg) * 8;
+      }
+      if (n.guard) { // kind/status
+        const k = L?.kind?.[String(n.guard)] || { pos: 0, neg: 0 };
+        s += diff(k.pos, k.neg) * 6;
+      }
+      s *= confW(n.confidence);
+      const score = Math.max(0, Math.min(100, Math.round(50 + s)));
+      return score;
+    };
+    const arr = details.map((d) => ({ ...d, _score: scoreOf(d) })).sort((a,b)=> (b._score - a._score));
+    return arr.filter((d) => d._score >= 70).slice(0, 3);
+  }, [payload?.details, learning]);
   const sentiment = React.useMemo(() => {
     if (!payload) return 'neutral';
     if ((counts.better || 0) === 0 && (counts.worse || 0) === 0) return 'neutral';
@@ -57,6 +101,17 @@ const NotificationPet = () => {
     const ts = payload?.ts || 0;
     return ts > ackTs;
   }, [payload, ackTs, ackFp]);
+
+  // Auto pop a short-lived bubble for recommended items on new payload
+  const [showReco, setShowReco] = React.useState(false);
+  const recoTimerRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!shouldShow || recommended.length === 0 || isPayoutDay) return;
+    setShowReco(true);
+    if (recoTimerRef.current) clearTimeout(recoTimerRef.current);
+    recoTimerRef.current = setTimeout(() => setShowReco(false), 15000);
+    return () => { if (recoTimerRef.current) clearTimeout(recoTimerRef.current); };
+  }, [shouldShow, recommended.length, isPayoutDay, payload?.fingerprint]);
 
   React.useEffect(() => {
     const onStorage = (ev) => {
@@ -88,14 +143,6 @@ const NotificationPet = () => {
   }, []);
 
   // Payout-day celebration state
-  const today = new Date();
-  const y = today.getFullYear();
-  const m = today.getMonth();
-  const dayKey = fmtYMD(today);
-  const payoutDate = computePayoutForMonth(y, m);
-  const isPayoutDay = today.toDateString() === payoutDate.toDateString();
-  const target = new Date(y, m - 2, 1);
-  const targetKey = `${target.getFullYear()}-${pad2(target.getMonth()+1)}`;
   const [payoutTotal, setPayoutTotal] = React.useState(null);
   const [showBubble, setShowBubble] = React.useState(false);
   const [talkIdx, setTalkIdx] = React.useState(0);
@@ -418,7 +465,33 @@ const NotificationPet = () => {
               <p className="text-xs text-slate-300 mt-2 italic">“{quotes[quotesOrder[(quoteStep % (quotesOrder.length || 1))] || 0]}”</p>
             </motion.div>
           )}
-          {!isPayoutDay && showBubble && mtdEUR != null && (
+          {!isPayoutDay && showReco && recommended.length > 0 && (
+            <motion.div
+              key="reco-bubble"
+              initial={{ opacity: 0, y: 6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.98 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 22, mass: 0.4 }}
+              className="absolute -top-3 right-14 w-72 bg-slate-900 text-slate-100 border border-slate-700 rounded-xl p-3 shadow-xl"
+              aria-live="polite"
+            >
+              <p className="text-xs text-slate-300">Notifiche consigliate</p>
+              <p className="text-sm mt-1">Hai <span className="text-emerald-400 font-bold">{recommended.length}</span> suggerimenti basati sul tuo feedback.</p>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { try { window.dispatchEvent(new Event('openSmartNotifications')); } catch (_) {} setShowReco(false); }}
+                  className="text-[11px] text-gray-200 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded px-2 py-1"
+                >Apri</button>
+                <button
+                  type="button"
+                  onClick={() => setShowReco(false)}
+                  className="text-[11px] text-gray-300 hover:text-white"
+                >Nascondi</button>
+              </div>
+            </motion.div>
+          )}
+          {!isPayoutDay && !showReco && showBubble && mtdEUR != null && (
             <motion.div
               key="mtd-bubble"
               initial={{ opacity: 0, y: 6, scale: 0.98 }}

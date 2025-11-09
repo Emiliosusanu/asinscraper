@@ -241,15 +241,22 @@ const useAsinTrends = (asins) => {
         drivers.push(priceDeltaPct > 0 ? 'Prezzo medio più alto' : 'Prezzo medio più basso');
       }
 
-      // Compute QI score from global BSR range (min best, max worst) and current BSR
+      // Compute QI score from BSR range, ignoring sub-1000 values as unrealistic (launch spikes)
       const bsrVals = (allHistory || []).map((r) => Number(r.bsr)).filter((v) => Number.isFinite(v) && v > 0);
-      const minEver = bsrVals.length ? Math.min(...bsrVals) : null;
-      const maxEver = bsrVals.length ? Math.max(...bsrVals) : null;
+      const FLOOR_MIN = 1000; // ignore BSR < 1000 for baseline
+      const baseVals = bsrVals.filter((v) => v >= FLOOR_MIN);
+      const minEver = baseVals.length ? Math.min(...baseVals) : FLOOR_MIN;
+      const maxEver = baseVals.length ? Math.max(...baseVals) : (bsrVals.length ? Math.max(...bsrVals) : null);
       const currBsr = (Number.isFinite(Number(asin.bsr)) && Number(asin.bsr) > 0)
         ? Number(asin.bsr)
         : (Number.isFinite(Number(current?.bsr)) && Number(current?.bsr) > 0 ? Number(current?.bsr) : null);
       let qiScore = null;
-      if (Number.isFinite(minEver) && Number.isFinite(maxEver) && Number.isFinite(currBsr) && maxEver > minEver) {
+      if (!Number.isFinite(currBsr)) {
+        qiScore = null;
+      } else if (baseVals.length === 0) {
+        // No baseline >= 1000 available: treat current (sub-1000 period) as perfect
+        qiScore = 100;
+      } else if (Number.isFinite(maxEver) && maxEver > minEver) {
         const ratio = (maxEver - currBsr) / (maxEver - minEver);
         qiScore = Math.round(Math.max(0, Math.min(1, ratio)) * 100);
       }

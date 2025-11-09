@@ -338,6 +338,31 @@ export async function enrichAllAsins(
   return results;
 }
 
+// Soft archive/unarchive an ASIN (keeps asin_history intact)
+export const archiveAsin = async (asinData, { restore = false } = {}) => {
+  try {
+    if (!asinData?.id) throw new Error('ASIN mancante');
+    const payload = restore
+      ? { archived: false, archived_at: null }
+      : { archived: true, archived_at: new Date().toISOString() };
+    const { error } = await supabase
+      .from('asin_data')
+      .update(payload)
+      .eq('id', asinData.id);
+    if (error) throw error;
+    toast({
+      title: restore ? 'ASIN ripristinato' : 'ASIN archiviato',
+      description: asinData?.title ? `${asinData.title} ${restore ? 'è stato ripristinato.' : 'è stato archiviato.'}` : undefined,
+    });
+    return true;
+  } catch (e) {
+    toast({ title: 'Operazione fallita', description: e?.message || String(e), variant: 'destructive' });
+    return false;
+  }
+};
+
+export const unarchiveAsin = async (asinData) => archiveAsin(asinData, { restore: true });
+
 export const deleteAsinAndHistory = async (asinToDelete) => {
 	if (!asinToDelete) return false;
 

@@ -89,6 +89,8 @@ const AsinTrendChart = ({ asinData, onClose }) => {
   const [fixReviews, setFixReviews] = useLocalStorage('asinTrendChartFixReviews', true);
   // Global neon mode toggle shared with other charts
   const [neonMode, setNeonMode] = useLocalStorage('neonChartsMode', true);
+  // QI baseline monitor: when set, treat current BSR (at toggle time) as the new baseline (min)
+  const [monitorStart, setMonitorStart] = useLocalStorage(`asinTrendMonitorStart:${asinData.id}`, null);
   const [isMobile, setIsMobile] = useState(false);
   const [bsrRange, setBsrRange] = useState({ min: null, max: null });
   // Mouse-follow glow in chart area
@@ -560,19 +562,37 @@ const AsinTrendChart = ({ asinData, onClose }) => {
     return null;
   }, [dataForChart]);
 
-  // Display min/max (global if available, otherwise fallback to loaded history)
+  // Display min/max (supports "Monitor from now" baseline override)
   const displayMin = useMemo(() => {
+    // If monitoring from now, compute min from monitorStart forward (include current)
+    if (monitorStart) {
+      const xs = (history || [])
+        .filter(r => (r?.ts == null || r.ts >= monitorStart))
+        .map(r => Number(r?.BSR))
+        .filter(v => Number.isFinite(v) && v > 0);
+      if (Number.isFinite(currentBSR) && currentBSR > 0) xs.push(currentBSR);
+      return xs.length ? Math.min(...xs) : (Number.isFinite(currentBSR) ? currentBSR : null);
+    }
+    // Default: global min if available, else min in loaded history
     const gmin = Number(bsrRange?.min);
     if (Number.isFinite(gmin) && gmin > 0) return gmin;
     const xs = (history || []).map(r => Number(r?.BSR)).filter(v => Number.isFinite(v) && v > 0);
     return xs.length ? Math.min(...xs) : null;
-  }, [bsrRange?.min, history]);
+  }, [monitorStart, currentBSR, bsrRange?.min, history]);
   const displayMax = useMemo(() => {
+    if (monitorStart) {
+      const xs = (history || [])
+        .filter(r => (r?.ts == null || r.ts >= monitorStart))
+        .map(r => Number(r?.BSR))
+        .filter(v => Number.isFinite(v) && v > 0);
+      if (Number.isFinite(currentBSR) && currentBSR > 0) xs.push(currentBSR);
+      return xs.length ? Math.max(...xs) : (Number.isFinite(currentBSR) ? currentBSR : null);
+    }
     const gmax = Number(bsrRange?.max);
     if (Number.isFinite(gmax) && gmax > 0) return gmax;
     const xs = (history || []).map(r => Number(r?.BSR)).filter(v => Number.isFinite(v) && v > 0);
     return xs.length ? Math.max(...xs) : null;
-  }, [bsrRange?.max, history]);
+  }, [monitorStart, currentBSR, bsrRange?.max, history]);
 
   // Position of current BSR within the range [min..max]
   const bsrRangePos = useMemo(() => {
@@ -815,6 +835,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                   <Button onClick={() => setSmooth(v => !v)} variant="outline" size="xs" title="Smussa BSR/Prezzo con una media mobile a 3 punti" className={`${toggleBtnClass} ${smooth ? activeBtnClass : ''}`} aria-pressed={!!smooth}>{smooth ? <><Wand2 className="w-3.5 h-3.5 mr-1" />Smussa: ON</> : <><Wand2 className="w-3.5 h-3.5 mr-1" />Smussa: OFF</>}</Button>
                   <Button onClick={() => setShowPrice(v => !v)} variant="outline" size="xs" title="Mostra/Nasconde la serie Prezzo" className={`${toggleBtnClass} ${showPrice ? activeBtnClass : ''}`} aria-pressed={!!showPrice}>{showPrice ? 'Prezzo: ON' : 'Prezzo: OFF'}</Button>
                   <Button onClick={() => setGuardOutliers(v => !v)} variant="outline" size="xs" title="Attenua spike isolati nel BSR confrontando i valori vicini" className={`${toggleBtnClass} ${guardOutliers ? activeBtnClass : ''}`} aria-pressed={!!guardOutliers}>{guardOutliers ? <><AlertTriangle className="w-3.5 h-3.5 mr-1" />Outlier: ON</> : <><AlertTriangle className="w-3.5 h-3.5 mr-1" />Outlier: OFF</>}</Button>
+                  <Button onClick={() => setMonitorStart(v => v ? null : Date.now())} variant="outline" size="xs" title="Imposta il BSR attuale come nuovo baseline per il QI" className={`${toggleBtnClass} ${monitorStart ? activeBtnClass : ''}`} aria-pressed={!!monitorStart}>{monitorStart ? 'Monitor: ON' : 'Monitor: NOW'}</Button>
                   <Button onClick={() => setNeonMode(v => !v)} variant="outline" size="xs" title="Abilita/Disabilita effetto neon e pulsazioni" className={`${toggleBtnClass} ${neonMode ? activeBtnClass : ''}`} aria-pressed={!!neonMode}>{neonMode ? 'Neon: ON' : 'Neon: OFF'}</Button>
                   <Popover>
                     <PopoverTrigger asChild>
