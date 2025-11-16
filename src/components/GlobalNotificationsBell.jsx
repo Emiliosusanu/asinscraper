@@ -13,6 +13,15 @@ const loadPayload = () => {
 };
 
 const GlobalNotificationsBell = () => {
+  const isXmas = React.useMemo(() => {
+    try {
+      const d = new Date();
+      const m = d.getMonth();
+      const day = d.getDate();
+      const force = (typeof import.meta !== 'undefined' && import.meta && import.meta.env && import.meta.env.VITE_FORCE_XMAS === '1');
+      return force || m === 11 || (m === 10 && day >= 15) || (m === 0 && day <= 6);
+    } catch (_) { return false; }
+  }, []);
   const [payload, setPayload] = React.useState(() => loadPayload());
   const [ackTs, setAckTs] = React.useState(() => {
     try { return Number(localStorage.getItem('globalNotificationsAckTs')) || 0; } catch (_) { return 0; }
@@ -153,6 +162,15 @@ const GlobalNotificationsBell = () => {
       <PopoverTrigger asChild>
         <Button size="icon" variant="ghost" className={`w-10 h-10 relative rounded-full p-0 ${hasUnread ? 'ring-2 ring-amber-300/60' : ''}`}>
           <Smiley mode={sentiment} />
+          {isXmas && (
+            <span className="absolute -top-1 -left-0 rotate-12 pointer-events-none" aria-hidden>
+              <span className="relative inline-block">
+                <span className="w-4 h-2 bg-white rounded-full shadow-sm inline-block" />
+                <span className="absolute -top-2 left-1 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[12px] border-b-red-500" />
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-white rounded-full shadow-sm" />
+              </span>
+            </span>
+          )}
           {hasUnread && <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>}
         </Button>
       </PopoverTrigger>

@@ -32,10 +32,32 @@ const ApiKeyManager = () => {
     } else {
       const nowMs = Date.now();
       const dayMs = 24 * 60 * 60 * 1000;
-      setApiKeys(data.map(k => {
+      const toReset = (data || []).filter(k => {
         const base = k?.last_reset_at || k?.created_at;
         const baseDate = base ? new Date(base) : null;
         const elapsed = baseDate ? Math.floor((nowMs - baseDate.getTime()) / dayMs) : 0;
+        return elapsed >= 30;
+      });
+      if (toReset.length) {
+        const nowIso = new Date().toISOString();
+        await Promise.all(toReset.map(async (k) => {
+          const maxCreds = Number.isFinite(k?.max_credits) ? Number(k.max_credits) : 1000;
+          const patch = { credits: maxCreds, last_reset_at: nowIso, cooldown_until: null };
+          if ((k?.status || '').toLowerCase() === 'exhausted') patch.status = 'active';
+          await supabase.from('scraper_api_keys').update(patch).eq('id', k.id);
+        }));
+      }
+      const { data: refreshed } = await supabase
+        .from('scraper_api_keys')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
+      const rows = Array.isArray(refreshed) ? refreshed : (Array.isArray(data) ? data : []);
+      const now2 = Date.now();
+      setApiKeys(rows.map(k => {
+        const base = k?.last_reset_at || k?.created_at;
+        const baseDate = base ? new Date(base) : null;
+        const elapsed = baseDate ? Math.floor((now2 - baseDate.getTime()) / dayMs) : 0;
         const tempDaysLeft = Math.max(0, 30 - elapsed);
         return ({ ...k, isEditing: false, tempMaxCredits: k.max_credits, tempCostPerCall: k.cost_per_call, tempDaysLeft });
       }));
@@ -96,18 +118,29 @@ const ApiKeyManager = () => {
   const handleResetCredits = async (keyId) => {
     const { error } = await supabase.rpc('reset_scraper_api_key_credits', { p_key_id: keyId, p_user_id: user.id });
     if (error) {
-      toast({ title: 'Errore nel reset', description: error.message, variant: 'destructive' });
-    } else {
-      // Ensure next reset defaults to 30 days from now
       try {
-        await supabase
-          .from('scraper_api_keys')
-          .update({ last_reset_at: new Date().toISOString() })
-          .eq('id', keyId);
-      } catch (_) {}
-      fetchApiKeys();
-      toast({ title: 'Crediti Resettati!', description: 'I crediti per la chiave sono stati ripristinati.' });
+        const k = apiKeys.find(x => x.id === keyId);
+        const nowIso = new Date().toISOString();
+        const maxCreds = Number.isFinite(k?.max_credits) ? Number(k.max_credits) : 1000;
+        const patch = { credits: maxCreds, last_reset_at: nowIso, cooldown_until: null };
+        if ((k?.status || '').toLowerCase() === 'exhausted') patch.status = 'active';
+        await supabase.from('scraper_api_keys').update(patch).eq('id', keyId);
+        await fetchApiKeys();
+        toast({ title: 'Crediti Resettati!', description: 'I crediti per la chiave sono stati ripristinati.' });
+        return;
+      } catch (e) {
+        toast({ title: 'Errore nel reset', description: String(e?.message || error.message), variant: 'destructive' });
+        return;
+      }
     }
+    try {
+      await supabase
+        .from('scraper_api_keys')
+        .update({ last_reset_at: new Date().toISOString() })
+        .eq('id', keyId);
+    } catch (_) {}
+    await fetchApiKeys();
+    toast({ title: 'Crediti Resettati!', description: 'I crediti per la chiave sono stati ripristinati.' });
   };
 
   const handleUpdateKey = async (keyId) => {

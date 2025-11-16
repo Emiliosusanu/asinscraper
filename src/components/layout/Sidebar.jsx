@@ -9,6 +9,15 @@ const Sidebar = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const [logoHover, setLogoHover] = React.useState(false);
+  const isXmas = React.useMemo(() => {
+    try {
+      const d = new Date();
+      const m = d.getMonth();
+      const day = d.getDate();
+      const force = (typeof import.meta !== 'undefined' && import.meta && import.meta.env && import.meta.env.VITE_FORCE_XMAS === '1');
+      return force || m === 11 || (m === 10 && day >= 15) || (m === 0 && day <= 6);
+    } catch (_) { return false; }
+  }, []);
 
   const handleSignOut = async () => {
     await signOut();
@@ -57,6 +66,15 @@ const Sidebar = () => {
                 animation: logoHover ? 'logoWave 1.4s ease-in-out infinite' : 'logoBreathe 7s ease-in-out infinite',
               }}
             />
+            {isXmas && (
+              <div className="absolute -top-2 -right-1 rotate-12 pointer-events-none" aria-hidden>
+                <div className="relative">
+                  <div className="w-5 h-3 bg-white rounded-full shadow-sm" />
+                  <div className="absolute -top-3 left-2 w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[16px] border-b-red-500" />
+                  <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-white rounded-full shadow-sm" />
+                </div>
+              </div>
+            )}
           </div>
           <span className="text-2xl font-bold text-foreground truncate max-w-[10rem]" title={displayName}>{displayName}</span>
         </div>

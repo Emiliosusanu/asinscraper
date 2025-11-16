@@ -204,24 +204,58 @@ const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 });
 /* ======================= Rotation & retries ======================= */ const MAX_RETRIES = 6;
 async function getAvailableApiKey(userId, service, excludedIds = []) {
- // Fetch broader info and filter locally (cooldown, credits per cost)
- let query = supabaseAdmin.from("scraper_api_keys").select("id, api_key, status, credits, max_credits, cost_per_call, last_used_at, success_count, failure_count, last_success_at, cooldown_until").eq("user_id", userId).eq("service_name", service).eq("status", "active");
+ // Fetch keys (all statuses) and perform auto-reset if 30d elapsed since last_reset_at
+ let query = supabaseAdmin.from("scraper_api_keys").select("id, api_key, status, credits, max_credits, cost_per_call, last_used_at, success_count, failure_count, last_success_at, cooldown_until, last_reset_at, created_at").eq("user_id", userId).eq("service_name", service);
  const { data, error } = await query;
  if (error) {
    console.error(`Error fetching API keys (user: ${userId}):`, error);
    return null;
  }
  const nowMs = Date.now();
+ // Auto-reset eligible keys
+ try {
+   const list = Array.isArray(data) ? data : [];
+   const dayMs = 24 * 60 * 60 * 1000;
+   const needsReset = list.filter((k)=>{
+     const baseTs = k?.last_reset_at ? Date.parse(k.last_reset_at) : (k?.created_at ? Date.parse(k.created_at) : 0);
+     if (!baseTs) return false;
+     const elapsedDays = Math.floor((nowMs - baseTs) / dayMs);
+     return elapsedDays >= 30;
+   });
+   if (needsReset.length) {
+     const nowIso = new Date().toISOString();
+     for (const k of needsReset) {
+       try {
+         const maxCreds = Number.isFinite(k?.max_credits) ? Number(k.max_credits) : 1000;
+         const patch = { credits: maxCreds, last_reset_at: nowIso, cooldown_until: null };
+         // Reactivate only if previously exhausted; keep user-inactive keys untouched
+         if ((k?.status || '').toLowerCase() === 'exhausted') patch.status = 'active';
+         await supabaseAdmin.from("scraper_api_keys").update(patch).eq("id", k.id);
+       } catch (_) {}
+     }
+   }
+ } catch (_) {}
+ // Refetch only ACTIVE keys after resets
+ let activeData = Array.isArray(data) ? data.filter((k)=> (k?.status||'').toLowerCase() === 'active') : [];
+ try {
+   const { data: freshActive } = await supabaseAdmin
+     .from("scraper_api_keys")
+     .select("id, api_key, status, credits, max_credits, cost_per_call, last_used_at, success_count, failure_count, last_success_at, cooldown_until")
+     .eq("user_id", userId)
+     .eq("service_name", service)
+     .eq("status", "active");
+   if (Array.isArray(freshActive)) activeData = freshActive;
+ } catch (_) {}
  const excluded = new Set(excludedIds || []);
  const costFallback = 1;
- const candidates = (Array.isArray(data) ? data : []).filter((k)=>!excluded.has(k?.id)).filter((k)=>{
-   if ((k?.status || '').toLowerCase() !== 'active') return false;
-   const credits = Number.isFinite(k?.credits) ? Number(k.credits) : 0;
-   const unit = Number.isFinite(k?.cost_per_call) ? Math.max(1, Number(k.cost_per_call)) : costFallback;
-   if (credits < unit) return false;
-   const cd = k?.cooldown_until ? Date.parse(k.cooldown_until) : 0;
-   if (cd && cd > nowMs) return false; // skip keys under cooldown
-   return true;
+ const candidates = (Array.isArray(activeData) ? activeData : []).filter((k)=>!excluded.has(k?.id)).filter((k)=>{
+  if ((k?.status || '').toLowerCase() !== 'active') return false;
+  const credits = Number.isFinite(k?.credits) ? Number(k.credits) : 0;
+  const unit = Number.isFinite(k?.cost_per_call) ? Math.max(1, Number(k.cost_per_call)) : costFallback;
+  if (credits < unit) return false;
+  const cd = k?.cooldown_until ? Date.parse(k.cooldown_until) : 0;
+  if (cd && cd > nowMs) return false; // skip keys under cooldown
+  return true;
  }).sort((a, b)=>{
    const lsA = a?.last_success_at ? Date.parse(a.last_success_at) : 0;
    const lsB = b?.last_success_at ? Date.parse(b.last_success_at) : 0;

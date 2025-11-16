@@ -278,13 +278,50 @@ async function fetchWithKey(client: any, userId: string, asin: string, country: 
   const nowIso = new Date().toISOString();
   const { data: keys } = await client
     .from("scraper_api_keys")
-    .select("id, api_key, status, credits, max_credits, cost_per_call, last_used_at, success_count, failure_count, last_success_at, cooldown_until")
+    .select("id, api_key, status, credits, max_credits, cost_per_call, last_used_at, success_count, failure_count, last_success_at, cooldown_until, last_reset_at, created_at")
     .eq("user_id", userId)
     .eq("service_name", "scraperapi");
 
   const costFallback = 1;
   const nowMs = Date.now();
-  const candidates = (Array.isArray(keys) ? keys : [])
+  // Auto-reset credits when 30 days elapsed since last_reset_at (or created_at fallback)
+  try {
+    const list = Array.isArray(keys) ? keys : [];
+    const dayMs = 24 * 60 * 60 * 1000;
+    const needsReset = list.filter((k: any) => {
+      const baseTs = k?.last_reset_at ? Date.parse(k.last_reset_at) : (k?.created_at ? Date.parse(k.created_at) : 0);
+      if (!baseTs) return false;
+      const elapsedDays = Math.floor((nowMs - baseTs) / dayMs);
+      return elapsedDays >= 30;
+    });
+    if (needsReset.length) {
+      const now = new Date().toISOString();
+      for (const k of needsReset) {
+        try {
+          const maxCreds = Number.isFinite(k?.max_credits) ? Number(k.max_credits) : 1000;
+          const patch: Record<string, any> = {
+            credits: maxCreds,
+            last_reset_at: now,
+            cooldown_until: null,
+          };
+          if ((k?.status || '').toLowerCase() === 'exhausted') patch.status = 'active';
+          await client.from('scraper_api_keys').update(patch).eq('id', k.id);
+          try { await client.from('scraper_api_logs').insert({ api_key_id: k.id, asin, country, status: 'reset', cost: 0, error_message: null }); } catch (_) {}
+        } catch (_) {}
+      }
+    }
+  } catch (_) {}
+  // Re-fetch keys after potential resets to work with fresh state
+  let baseKeys: any[] = Array.isArray(keys) ? keys : [];
+  try {
+    const { data: fresh } = await client
+      .from("scraper_api_keys")
+      .select("id, api_key, status, credits, max_credits, cost_per_call, last_used_at, success_count, failure_count, last_success_at, cooldown_until")
+      .eq("user_id", userId)
+      .eq("service_name", "scraperapi");
+    if (Array.isArray(fresh)) baseKeys = fresh;
+  } catch (_) {}
+  const candidates = (baseKeys)
     .filter((k: any) => {
       if ((k?.status || '').toLowerCase() !== 'active') return false;
       const credits = Number.isFinite(k?.credits) ? Number(k.credits) : 0;
