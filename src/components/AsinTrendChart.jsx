@@ -661,6 +661,24 @@ const AsinTrendChart = ({ asinData, onClose }) => {
     return ((last - prev) / prev) * 100;
   }, [dataForChart]);
 
+  const reviewCounters = useMemo(() => {
+    const arr = history || [];
+    if (arr.length < 2) return { gained: 0, lost: 0 };
+    let gained = 0, lost = 0;
+    let prev = null;
+    for (const r of arr) {
+      const curr = Number(r?.Recensioni);
+      if (!Number.isFinite(curr) || curr <= 0) continue;
+      if (Number.isFinite(prev)) {
+        const d = curr - prev;
+        if (d > 0) gained += d;
+        else if (d < 0) lost += -d;
+      }
+      prev = curr;
+    }
+    return { gained, lost };
+  }, [history]);
+
   // Visual Y-domain for BSR (mirrors YAxis domain with 5% padding)
   const [visMin, visMax] = useMemo(() => {
     const xs = (dataForChart || []).map(r => Number(r.BSR)).filter(v => Number.isFinite(v) && v > 0);
@@ -956,6 +974,20 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                         <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full border backdrop-blur font-medium ${currZoneChipClass}`}>
                           BSR {nfCompact.format(currentBSR)}
                         </span>
+                      )}
+                      {(Number(reviewCounters?.gained) > 0 || Number(reviewCounters?.lost) > 0) && (
+                        <div className="flex items-center gap-1">
+                          {Number(reviewCounters?.gained) > 0 && (
+                            <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full border backdrop-blur font-medium text-emerald-300 bg-emerald-500/10 border-emerald-500/20">
+                              +{nfPlain.format(reviewCounters.gained)}
+                            </span>
+                          )}
+                          {Number(reviewCounters?.lost) > 0 && (
+                            <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full border backdrop-blur font-medium text-red-300 bg-red-500/10 border-red-500/20">
+                              -{nfPlain.format(reviewCounters.lost)}
+                            </span>
+                          )}
+                        </div>
                       )}
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-gray-200/90 flex items-center gap-1">
