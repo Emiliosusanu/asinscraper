@@ -257,11 +257,11 @@ React.useEffect(() => {
           <Star className="w-4 h-4 text-yellow-400" />
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:gap-4 w-full">
             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="font-semibold text-foreground text-sm sm:text-base leading-tight min-w-0">
+              <span className="font-semibold text-foreground text-sm sm:text-base leading-tight min-w-0 whitespace-nowrap">
                 {data.rating ? (
                   <>
-                    <span className="sm:hidden">{`${data.rating}/5 (${new Intl.NumberFormat('it-IT', { notation: 'compact', maximumFractionDigits: 1 }).format(data.review_count || 0)})`}</span>
-                    <span className="hidden sm:inline">{`${data.rating}/5 (${formatNumber(data.review_count)})`}</span>
+                    <span className="sm:hidden whitespace-nowrap">{`${data.rating}/5 (${new Intl.NumberFormat('it-IT', { notation: 'compact', maximumFractionDigits: 1 }).format(data.review_count || 0)})`}</span>
+                    <span className="hidden sm:inline whitespace-nowrap">{`${data.rating}/5 (${formatNumber(data.review_count)})`}</span>
                   </>
                 ) : '—'}
               </span>
