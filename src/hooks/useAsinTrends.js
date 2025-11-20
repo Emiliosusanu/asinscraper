@@ -3,23 +3,18 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { calculateSalesFromBsr, calculateIncome } from '@/lib/incomeCalculator';
 import { estimateRoyalty } from '@/lib/royaltyEstimator';
 
-const calculateTrend = (current, previous, lowerIsBetter = false) => {
-  if (previous === null || current === null || previous === 0 || current === previous) {
-    return 'stable';
+const calculateTrend = (current, previous, lowerIsBetter = false, noThreshold = false) => {
+  if (previous === null || current === null) return 'stable';
+  if (current === previous) return 'stable';
+  if (!noThreshold && previous === 0) return 'stable';
+  if (!noThreshold) {
+    const changeThreshold = 0.01;
+    const absoluteChange = Math.abs(current - previous);
+    const relativeChange = Math.abs(absoluteChange / previous);
+    if (relativeChange < changeThreshold && absoluteChange < 5) return 'stable';
   }
-  
-  const changeThreshold = 0.01; // 1% change
-  const absoluteChange = Math.abs(current - previous);
-  const relativeChange = Math.abs(absoluteChange / previous);
-
-  if (relativeChange < changeThreshold && absoluteChange < 5) {
-      return 'stable';
-  }
-
-  if (lowerIsBetter) {
-    return current < previous ? 'up' : 'down'; // up is good (e.g. BSR decreased)
-  }
-  return current > previous ? 'up' : 'down'; // up is good (e.g. reviews increased)
+  if (lowerIsBetter) return current < previous ? 'up' : 'down';
+  return current > previous ? 'up' : 'down';
 };
 
 const useAsinTrends = (asins) => {
@@ -84,8 +79,21 @@ const useAsinTrends = (asins) => {
       const prevPrice = findPrevDifferent(relevantHistory, 'price');
 
       const bsrTrend = calculateTrend(current.bsr, prevBsr, true);
-      const reviewsTrend = calculateTrend(current.review_count, prevReviews);
+      const reviewsTrend = calculateTrend(current.review_count, prevReviews, false, true);
       const priceTrend = calculateTrend(current.price, prevPrice);
+
+      const lastTwoValid = (arr, key) => {
+        if (!arr || arr.length === 0) return [null, null];
+        let curr = null, prev = null;
+        for (let i = 0; i < arr.length; i++) {
+          const v = Number(arr[i]?.[key]);
+          if (!Number.isFinite(v) || v < 0) continue;
+          if (curr === null) curr = v; else { prev = v; break; }
+        }
+        return [curr, prev];
+      };
+      const [currRev, prevRevImmediate] = lastTwoValid(allHistory, 'review_count');
+      const reviewsDelta = (currRev != null && prevRevImmediate != null) ? (currRev - prevRevImmediate) : null;
 
       const currentSales = calculateSalesFromBsr(current.bsr);
       const effectiveRoyalty = (asin.royalty && asin.royalty > 0) ? asin.royalty : estimateRoyalty(asin);
@@ -264,6 +272,7 @@ const useAsinTrends = (asins) => {
       newTrends[asin.id] = {
         bsr: bsrTrend,
         reviews: reviewsTrend,
+        reviewsDelta,
         income: incomeTrend,
         price: priceTrend,
         acos: acosTrend,

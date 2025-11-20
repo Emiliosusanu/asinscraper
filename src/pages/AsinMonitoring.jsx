@@ -148,6 +148,8 @@ const AsinMonitoring = () => {
   const refreshTrendsRef = useRef(refreshTrends);
   const fetchTrackedAsinsRef = useRef(null);
   const toastCooldownRef = useRef(new Map()); // asin_id -> lastToastTs
+  const [poolReviews7d, setPoolReviews7d] = useState({ gained: 0, lost: 0 });
+  const computeReviewsRef = useRef(null);
 
   const portfolioQi = useMemo(() => {
     const items = (trackedAsins || [])
@@ -235,6 +237,7 @@ useEffect(() => {
     (payload) => {
       if (payload.new?.user_id !== user.id) return;
       refreshTrendsRef.current?.();
+      try { computeReviewsRef.current?.(); } catch (_) {}
       // Show a single consolidated toast when a real history point arrives
       try {
         const asinId = payload.new.asin_data_id;
@@ -317,6 +320,56 @@ useEffect(() => {
       .filter(item => (showArchived ? item.archived === true : item.archived !== true))
       .filter(item => item.title && item.title.toLowerCase().includes(filter.toLowerCase()));
   }, [trackedAsins, sort, filter, showArchived]);
+
+  const computePoolReviews7d = useCallback(async () => {
+    if (!user) return setPoolReviews7d({ gained: 0, lost: 0 });
+    const items = (trackedAsins || []).filter(a => (showArchived ? a.archived === true : a.archived !== true));
+    const ids = items.map(a => a.id);
+    if (!ids.length) { setPoolReviews7d({ gained: 0, lost: 0 }); return; }
+    const now = new Date();
+    const from = new Date(now); from.setDate(now.getDate() - 7);
+    const pre = new Date(from); pre.setDate(from.getDate() - 30);
+    const { data, error } = await supabase
+      .from('asin_history')
+      .select('asin_data_id, review_count, created_at')
+      .in('asin_data_id', ids)
+      .gte('created_at', pre.toISOString())
+      .order('created_at', { ascending: true });
+    if (error) { setPoolReviews7d({ gained: 0, lost: 0 }); return; }
+    const by = new Map();
+    for (const r of (data || [])) {
+      const arr = by.get(r.asin_data_id) || [];
+      arr.push(r);
+      by.set(r.asin_data_id, arr);
+    }
+    let gained = 0, lost = 0;
+    const startTs = from.getTime();
+    by.forEach((arr) => {
+      arr.sort((a,b)=> new Date(a.created_at) - new Date(b.created_at));
+      let baseline = null;
+      let prev = null;
+      for (const row of arr) {
+        const curr = Number(row.review_count);
+        if (!Number.isFinite(curr) || curr <= 0) continue;
+        const ts = new Date(row.created_at).getTime();
+        if (ts < startTs) {
+          baseline = curr;
+          prev = curr;
+          continue;
+        }
+        const p = (prev != null ? prev : baseline);
+        if (p != null) {
+          const d = curr - p;
+          if (d > 0) gained += d; else if (d < 0) lost += -d;
+        }
+        prev = curr;
+      }
+    });
+    setPoolReviews7d({ gained, lost });
+  }, [trackedAsins, showArchived, user]);
+
+  useEffect(() => { computeReviewsRef.current = computePoolReviews7d; }, [computePoolReviews7d]);
+  useEffect(() => { computePoolReviews7d(); }, [computePoolReviews7d]);
   
   const handleAddAsin = async (asin, country) => {
     setIsAdding(true);
@@ -474,6 +527,18 @@ const handleRefreshAll = async () => {
                 <span className="text-xs text-muted-foreground">{portfolioQi.label}</span>
               </div>
             )}
+            <div className="hidden sm:flex items-center gap-2 px-2 py-1 rounded-full border border-border bg-muted/40" title="Recensioni ultimi 7 giorni">
+              <span className="text-xs text-muted-foreground">Recensioni 7g</span>
+              {Number(poolReviews7d.gained) > 0 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full border backdrop-blur font-medium text-emerald-300 bg-emerald-500/10 border-emerald-500/20">+{new Intl.NumberFormat('it-IT').format(poolReviews7d.gained)}</span>
+              )}
+              {Number(poolReviews7d.lost) > 0 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full border backdrop-blur font-medium text-red-300 bg-red-500/10 border-red-500/20">-{new Intl.NumberFormat('it-IT').format(poolReviews7d.lost)}</span>
+              )}
+              {Number(poolReviews7d.gained) === 0 && Number(poolReviews7d.lost) === 0 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full border backdrop-blur font-medium text-gray-300 bg-white/5 border-white/10">0</span>
+              )}
+            </div>
           </div>
           <div className="flex gap-2">
             <Button size="xs" onClick={handleRefreshAll} variant="outline" className="border-border text-muted-foreground hover:bg-muted hover:text-foreground rounded-full px-3" disabled={isRefreshingAll}>

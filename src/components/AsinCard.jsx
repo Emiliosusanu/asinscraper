@@ -266,6 +266,13 @@ React.useEffect(() => {
                 ) : '—'}
               </span>
               <TrendIndicator trend={trend?.reviews} small />
+              {Number.isFinite(Number(trend?.reviewsDelta)) && Number(trend?.reviewsDelta) !== 0 && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded-full border backdrop-blur font-medium ${Number(trend.reviewsDelta) > 0 ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20' : 'text-red-300 bg-red-500/10 border-red-500/20'}`}
+                >
+                  {Number(trend.reviewsDelta) > 0 ? `+${Number(trend.reviewsDelta)}` : `${Number(trend.reviewsDelta)}`}
+                </span>
+              )}
             </div>
             <div
               className="flex items-center gap-1.5 justify-end flex-shrink-0 cursor-pointer hover:opacity-90 focus:outline-none focus:ring-1 focus:ring-border/50 rounded-md px-1 py-0.5"
