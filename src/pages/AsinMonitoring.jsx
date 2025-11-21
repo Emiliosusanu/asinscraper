@@ -151,6 +151,7 @@ const AsinMonitoring = () => {
   const toastCooldownRef = useRef(new Map()); // asin_id -> lastToastTs
   const [poolReviews7d, setPoolReviews7d] = useState({ gained: 0, lost: 0 });
   const computeReviewsRef = useRef(null);
+  const loadTopBooksMonthRef = useRef(null);
 
   const portfolioQi = useMemo(() => {
     const items = (trackedAsins || [])
@@ -187,6 +188,67 @@ const AsinMonitoring = () => {
   // Keep refs updated after functions are defined
   useEffect(() => { refreshTrendsRef.current = refreshTrends; }, [refreshTrends]);
   useEffect(() => { fetchTrackedAsinsRef.current = fetchTrackedAsins; }, [fetchTrackedAsins]);
+
+  const loadTopBooksMonth = useCallback(async () => {
+    if (!user) {
+      setTopBooksMonth([]);
+      return;
+    }
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    let rows = [];
+    try {
+      const { data, error } = await supabase
+        .from('kdp_top_books_month')
+        .select('rank,title,royalties_text,orders,cover_url,month,account_id')
+        .eq('account_id', user.id)
+        .eq('month', month)
+        .order('rank', { ascending: true });
+      if (!error && Array.isArray(data)) rows = data;
+    } catch (_) {}
+    if (!rows || rows.length === 0) {
+      try {
+        const { data, error } = await supabase
+          .from('kdp_top_books_month')
+          .select('rank,title,royalties_text,orders,cover_url,month,account_id')
+          .eq('month', month)
+          .order('rank', { ascending: true });
+        if (!error && Array.isArray(data)) rows = data;
+      } catch (_) {}
+    }
+    if (!rows || rows.length === 0) {
+      try {
+        const { data, error } = await supabase
+          .from('kdp_top_books_month')
+          .select('rank,title,royalties_text,orders,cover_url,month,account_id')
+          .eq('account_id', user.id)
+          .order('month', { ascending: false })
+          .order('rank', { ascending: true })
+          .limit(9);
+        if (!error && Array.isArray(data) && data.length) {
+          const lastMonth = data[0].month;
+          rows = data.filter(r => r.month === lastMonth);
+        }
+      } catch (_) {}
+    }
+    if (!rows || rows.length === 0) {
+      try {
+        const { data, error } = await supabase
+          .from('kdp_top_books_month')
+          .select('rank,title,royalties_text,orders,cover_url,month,account_id')
+          .order('month', { ascending: false })
+          .order('rank', { ascending: true })
+          .limit(9);
+        if (!error && Array.isArray(data) && data.length) {
+          const lastMonth = data[0].month;
+          rows = data.filter(r => r.month === lastMonth);
+        }
+      } catch (_) {}
+    }
+    setTopBooksMonth(Array.isArray(rows) ? rows : []);
+  }, [user?.id]);
+
+  useEffect(() => { loadTopBooksMonthRef.current = loadTopBooksMonth; }, [loadTopBooksMonth]);
 
 useEffect(() => {
   if (!user) return;
@@ -274,6 +336,18 @@ useEffect(() => {
     }
   );
 
+  channel.on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'kdp_top_books_month' },
+    (payload) => {
+      const recNew = payload.new || payload.record || null;
+      const recOld = payload.old || null;
+      const acc = recNew?.account_id ?? recOld?.account_id;
+      if (!user?.id || acc !== user.id) return;
+      loadTopBooksMonthRef.current?.();
+    }
+  );
+
   channel.subscribe((status) => {
     if (status === 'SUBSCRIBED') {
       console.log('Realtime subscribed (asin_data, asin_history, asin_events)');
@@ -290,61 +364,11 @@ useEffect(() => {
 }, [user?.id]);
 
   useEffect(() => {
-    if (!user) return;
-    const now = new Date();
-    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    (async () => {
-      let rows = [];
-      try {
-        const { data, error } = await supabase
-          .from('kdp_top_books_month')
-          .select('rank,title,royalties_text,orders,cover_url,month')
-          .eq('account_id', user.id)
-          .eq('month', month)
-          .order('rank', { ascending: true });
-        if (!error && Array.isArray(data)) rows = data;
-      } catch (_) {}
-      if (!rows || rows.length === 0) {
-        try {
-          const { data, error } = await supabase
-            .from('kdp_top_books_month')
-            .select('rank,title,royalties_text,orders,cover_url,month')
-            .eq('month', month)
-            .order('rank', { ascending: true });
-          if (!error && Array.isArray(data)) rows = data;
-        } catch (_) {}
-      }
-      if (!rows || rows.length === 0) {
-        try {
-          const { data, error } = await supabase
-            .from('kdp_top_books_month')
-            .select('rank,title,royalties_text,orders,cover_url,month')
-            .eq('account_id', user.id)
-            .order('month', { ascending: false })
-            .order('rank', { ascending: true })
-            .limit(9);
-          if (!error && Array.isArray(data) && data.length) {
-            const lastMonth = data[0].month;
-            rows = data.filter(r => r.month === lastMonth);
-          }
-        } catch (_) {}
-      }
-      if (!rows || rows.length === 0) {
-        try {
-          const { data, error } = await supabase
-            .from('kdp_top_books_month')
-            .select('rank,title,royalties_text,orders,cover_url,month')
-            .order('month', { ascending: false })
-            .order('rank', { ascending: true })
-            .limit(9);
-          if (!error && Array.isArray(data) && data.length) {
-            const lastMonth = data[0].month;
-            rows = data.filter(r => r.month === lastMonth);
-          }
-        } catch (_) {}
-      }
-      setTopBooksMonth(Array.isArray(rows) ? rows : []);
-    })();
+    if (!user) {
+      setTopBooksMonth([]);
+      return;
+    }
+    loadTopBooksMonthRef.current?.();
   }, [user?.id]);
 
 // Removed periodic polling to keep the layout steady; rely on realtime updates and manual refresh
@@ -453,6 +477,7 @@ useEffect(() => {
     }
     // Suppress service-level success toast to avoid duplicate toasts with realtime updates
     await scrapeAndProcessAsin(asinToRefresh.asin, asinToRefresh.country, user, { suppressToast: true });
+    try { await loadTopBooksMonthRef.current?.(); } catch (_) {}
     setRefreshingAsin(null);
   };
 
@@ -517,6 +542,7 @@ const handleRefreshAll = async () => {
         }
       }
     );
+    try { await loadTopBooksMonthRef.current?.(); } catch (_) {}
   } finally {
     setIsRefreshingAll(false);
     setInProgressAsins(new Set());
