@@ -324,14 +324,14 @@ React.useEffect(() => {
             <BarChart2 className="w-4 h-4 text-accent" />
             <div>
               <p className="text-muted-foreground">Guadagno Stimato (Mese)</p>
-              <p className="font-semibold text-foreground">
+              <p className="font-semibold text-foreground inline-flex items-center gap-1 whitespace-nowrap">
                 {topBook && (topBook.royalties_text || Number.isFinite(Number(topBook.orders))) && (
                   <>
                     {topBook.royalties_text && (
-                      <span className="inline-flex items-center justify-center h-5 px-1.5 mr-2 rounded-full border text-[10px] font-medium text-emerald-300 bg-emerald-500/10 border-emerald-500/20">{topBook.royalties_text}</span>
+                      <span className="inline-flex items-center justify-center h-4 px-1 rounded-full border text-[10px] font-medium text-emerald-300 bg-emerald-500/10 border-emerald-500/20">{topBook.royalties_text}</span>
                     )}
                     {Number.isFinite(Number(topBook.orders)) && Number(topBook.orders) > 0 && (
-                      <span className="inline-flex items-center justify-center h-5 px-1.5 mr-2 rounded-full border text-[10px] font-medium text-indigo-300 bg-indigo-500/10 border-indigo-500/20">{new Intl.NumberFormat('it-IT').format(Number(topBook.orders))} ordini</span>
+                      <span className="inline-flex items-center justify-center h-4 px-1 rounded-full border text-[10px] font-medium text-indigo-300 bg-indigo-500/10 border-indigo-500/20">{new Intl.NumberFormat('it-IT').format(Number(topBook.orders))} ordini</span>
                     )}
                   </>
                 )}

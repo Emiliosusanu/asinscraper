@@ -294,14 +294,27 @@ useEffect(() => {
     const now = new Date();
     const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     (async () => {
-      const { data, error } = await supabase
-        .from('kdp_top_books_month')
-        .select('rank,title,royalties_text,orders,cover_url')
-        .eq('account_id', user.id)
-        .eq('month', month)
-        .order('rank', { ascending: true });
-      if (!error && Array.isArray(data)) setTopBooksMonth(data);
-      else setTopBooksMonth([]);
+      let rows = [];
+      try {
+        const { data, error } = await supabase
+          .from('kdp_top_books_month')
+          .select('rank,title,royalties_text,orders,cover_url')
+          .eq('account_id', user.id)
+          .eq('month', month)
+          .order('rank', { ascending: true });
+        if (!error && Array.isArray(data)) rows = data;
+      } catch (_) {}
+      if (!rows || rows.length === 0) {
+        try {
+          const { data, error } = await supabase
+            .from('kdp_top_books_month')
+            .select('rank,title,royalties_text,orders,cover_url')
+            .eq('month', month)
+            .order('rank', { ascending: true });
+          if (!error && Array.isArray(data)) rows = data;
+        } catch (_) {}
+      }
+      setTopBooksMonth(Array.isArray(rows) ? rows : []);
     })();
   }, [user?.id]);
 
@@ -593,12 +606,23 @@ const handleRefreshAll = async () => {
                   trend={trends[item.id]}
                   snapshot={perfByAsinId[item.id]}
                   topBook={(topBooksMonth || []).find(tb => {
-                    const tbTitle = (tb?.title || '').trim();
+                    const tbTitle = (tb?.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
                     const t = (item?.title || '').trim();
                     const s = (item?.subtitle || '').trim();
-                    const cand = [t];
-                    if (s) { cand.push(`${t} ${s}`); cand.push(`${t}: ${s}`); }
-                    return cand.some(c => c.trim() === tbTitle);
+                    const variants = [];
+                    if (t) variants.push(t);
+                    if (s) {
+                      variants.push(`${t} ${s}`);
+                      variants.push(`${t}: ${s}`);
+                      variants.push(`${t} - ${s}`);
+                      variants.push(`${t}-${s}`);
+                      variants.push(`${t} – ${s}`);
+                      variants.push(`${t}—${s}`);
+                      variants.push(`${t} (${s})`);
+                    }
+                    return variants
+                      .map(v => v.trim().toLowerCase().replace(/\s+/g, ' '))
+                      .some(v => v === tbTitle);
                   })}
                   onRefresh={handleRefreshSingle}
                   onDelete={confirmDelete}
