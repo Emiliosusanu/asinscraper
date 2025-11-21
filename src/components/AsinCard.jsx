@@ -8,7 +8,7 @@ import BestsellerBadge from '@/components/BestsellerBadge';
 import AsinAcosGuideModal from '@/components/AsinAcosGuideModal';
 import CircularProgress from '@/components/ui/CircularProgress';
 
-const AsinCard = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart, onEditRoyalty, onShowReviews, onShowLogs, isRefreshing }) => {
+const AsinCard = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart, onEditRoyalty, onShowReviews, onShowLogs, topBook, isRefreshing }) => {
   const handleRefresh = (e) => {
     e.stopPropagation();
     if (onRefresh) onRefresh(data);
@@ -324,7 +324,19 @@ React.useEffect(() => {
             <BarChart2 className="w-4 h-4 text-accent" />
             <div>
               <p className="text-muted-foreground">Guadagno Stimato (Mese)</p>
-              <p className="font-semibold text-foreground">{formatIncomeRange(income.monthly)}</p>
+              <p className="font-semibold text-foreground">
+                {topBook && (topBook.royalties_text || Number.isFinite(Number(topBook.orders))) && (
+                  <>
+                    {topBook.royalties_text && (
+                      <span className="inline-flex items-center justify-center h-5 px-1.5 mr-2 rounded-full border text-[10px] font-medium text-emerald-300 bg-emerald-500/10 border-emerald-500/20">{topBook.royalties_text}</span>
+                    )}
+                    {Number.isFinite(Number(topBook.orders)) && Number(topBook.orders) > 0 && (
+                      <span className="inline-flex items-center justify-center h-5 px-1.5 mr-2 rounded-full border text-[10px] font-medium text-indigo-300 bg-indigo-500/10 border-indigo-500/20">{new Intl.NumberFormat('it-IT').format(Number(topBook.orders))} ordini</span>
+                    )}
+                  </>
+                )}
+                {formatIncomeRange(income.monthly)}
+              </p>
             </div>
           </div>
           <TrendIndicator trend={trend?.income} />

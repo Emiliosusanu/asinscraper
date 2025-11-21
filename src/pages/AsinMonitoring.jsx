@@ -140,6 +140,7 @@ const AsinMonitoring = () => {
   const [inProgressAsins, setInProgressAsins] = useState(new Set());
   const lastScrollTsRef = useRef(0);
   const [showArchived, setShowArchived] = useLocalStorage('asinMonitoringShowArchived', false);
+  const [topBooksMonth, setTopBooksMonth] = useState([]);
 
   
   const { trends, refreshTrends } = useAsinTrends(trackedAsins);
@@ -287,6 +288,22 @@ useEffect(() => {
     channelRef.current = null;
   };
 }, [user?.id]);
+
+  useEffect(() => {
+    if (!user) return;
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    (async () => {
+      const { data, error } = await supabase
+        .from('kdp_top_books_month')
+        .select('rank,title,royalties_text,orders,cover_url')
+        .eq('account_id', user.id)
+        .eq('month', month)
+        .order('rank', { ascending: true });
+      if (!error && Array.isArray(data)) setTopBooksMonth(data);
+      else setTopBooksMonth([]);
+    })();
+  }, [user?.id]);
 
 // Removed periodic polling to keep the layout steady; rely on realtime updates and manual refresh
 
@@ -575,6 +592,14 @@ const handleRefreshAll = async () => {
                   data={item} 
                   trend={trends[item.id]}
                   snapshot={perfByAsinId[item.id]}
+                  topBook={(topBooksMonth || []).find(tb => {
+                    const tbTitle = (tb?.title || '').trim();
+                    const t = (item?.title || '').trim();
+                    const s = (item?.subtitle || '').trim();
+                    const cand = [t];
+                    if (s) { cand.push(`${t} ${s}`); cand.push(`${t}: ${s}`); }
+                    return cand.some(c => c.trim() === tbTitle);
+                  })}
                   onRefresh={handleRefreshSingle}
                   onDelete={confirmDelete}
                   onShowChart={() => setSelectedAsinForChart(item)}
