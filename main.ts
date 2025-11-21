@@ -36,12 +36,17 @@ async function invokeScraperWithRetry(
         body: JSON.stringify({ userId, asin, country }),
       });
       if (error) throw new Error(error.message || 'invoke error');
-      if (data && (data as any).error) throw new Error((data as any).error);
+      const jd: any = data;
+      if (!jd || jd.success !== true) throw new Error((jd && jd.error) ? String(jd.error) : 'scraper returned failure');
+      const payload = jd.data || {};
+      const pagesOk = Number.isFinite(payload?.page_count) && Number(payload.page_count) > 0;
+      const pubOk = !!payload?.publication_date;
+      if (!pagesOk || !pubOk) throw new Error('incomplete scrape: missing pages or publication_date');
       return { ok: true as const };
     } catch (e) {
       lastErr = e;
       const msg = String((e as any)?.message || e);
-      const transient = /(429|403|timeout|temporar|rate|still\s*running|step\s*is\s*still\s*running)/i.test(msg);
+      const transient = /(429|403|timeout|temporar|rate|still\s*running|step\s*is\s*still\s*running|incomplete|missing)/i.test(msg);
       if (attempt < retries && transient) {
         const jitter = Math.floor(Math.random() * 300);
         await sleep(baseDelay * attempt + jitter);
