@@ -298,7 +298,7 @@ useEffect(() => {
       try {
         const { data, error } = await supabase
           .from('kdp_top_books_month')
-          .select('rank,title,royalties_text,orders,cover_url')
+          .select('rank,title,royalties_text,orders,cover_url,month')
           .eq('account_id', user.id)
           .eq('month', month)
           .order('rank', { ascending: true });
@@ -308,10 +308,39 @@ useEffect(() => {
         try {
           const { data, error } = await supabase
             .from('kdp_top_books_month')
-            .select('rank,title,royalties_text,orders,cover_url')
+            .select('rank,title,royalties_text,orders,cover_url,month')
             .eq('month', month)
             .order('rank', { ascending: true });
           if (!error && Array.isArray(data)) rows = data;
+        } catch (_) {}
+      }
+      if (!rows || rows.length === 0) {
+        try {
+          const { data, error } = await supabase
+            .from('kdp_top_books_month')
+            .select('rank,title,royalties_text,orders,cover_url,month')
+            .eq('account_id', user.id)
+            .order('month', { ascending: false })
+            .order('rank', { ascending: true })
+            .limit(9);
+          if (!error && Array.isArray(data) && data.length) {
+            const lastMonth = data[0].month;
+            rows = data.filter(r => r.month === lastMonth);
+          }
+        } catch (_) {}
+      }
+      if (!rows || rows.length === 0) {
+        try {
+          const { data, error } = await supabase
+            .from('kdp_top_books_month')
+            .select('rank,title,royalties_text,orders,cover_url,month')
+            .order('month', { ascending: false })
+            .order('rank', { ascending: true })
+            .limit(9);
+          if (!error && Array.isArray(data) && data.length) {
+            const lastMonth = data[0].month;
+            rows = data.filter(r => r.month === lastMonth);
+          }
         } catch (_) {}
       }
       setTopBooksMonth(Array.isArray(rows) ? rows : []);
@@ -606,9 +635,17 @@ const handleRefreshAll = async () => {
                   trend={trends[item.id]}
                   snapshot={perfByAsinId[item.id]}
                   topBook={(topBooksMonth || []).find(tb => {
-                    const tbTitle = (tb?.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+                    const norm = (x) => (x || '')
+                      .toString()
+                      .trim()
+                      .toLowerCase()
+                      .normalize('NFD')
+                      .replace(/[\u0300-\u036f]/g, '')
+                      .replace(/[^a-z0-9]+/g, '');
                     const t = (item?.title || '').trim();
                     const s = (item?.subtitle || '').trim();
+                    const tbTitleN = norm(tb?.title);
+                    if (!tbTitleN) return false;
                     const variants = [];
                     if (t) variants.push(t);
                     if (s) {
@@ -621,8 +658,8 @@ const handleRefreshAll = async () => {
                       variants.push(`${t} (${s})`);
                     }
                     return variants
-                      .map(v => v.trim().toLowerCase().replace(/\s+/g, ' '))
-                      .some(v => v === tbTitle);
+                      .map(v => norm(v))
+                      .some(v => v && (v === tbTitleN || v.startsWith(tbTitleN) || tbTitleN.startsWith(v)));
                   })}
                   onRefresh={handleRefreshSingle}
                   onDelete={confirmDelete}
