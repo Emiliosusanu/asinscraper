@@ -197,14 +197,14 @@ const AsinTrendChart = ({ asinData, onClose }) => {
           .from('asin_history')
           .select('bsr')
           .eq('asin_data_id', asinData.id)
-          .gt('bsr', 0)
+          .gte('bsr', 500)
           .order('bsr', { ascending: true })
           .limit(1);
         const { data: maxRows } = await supabase
           .from('asin_history')
           .select('bsr')
           .eq('asin_data_id', asinData.id)
-          .gt('bsr', 0)
+          .gte('bsr', 500)
           .order('bsr', { ascending: false })
           .limit(1);
         const min = Number(minRows?.[0]?.bsr);
@@ -272,7 +272,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
       let prevBSR = null, prevRev = null, prevPrice = null;
       for (const row of cleaned) {
         const b = Number(row.BSR);
-        if (!isFinite(b) || b <= 0) { if (prevBSR != null) row.BSR = prevBSR; } else { prevBSR = b; }
+        if (!isFinite(b) || b < 500) { if (prevBSR != null) row.BSR = prevBSR; } else { prevBSR = b; }
         const r = Number(row.Recensioni);
         if (!isFinite(r) || r < 0) { if (prevRev != null) row.Recensioni = prevRev; } else { prevRev = r; }
         const p = Number(row.Prezzo);
@@ -295,7 +295,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
           const prev = Number(cleaned[i-1].BSR);
           const curr = Number(cleaned[i].BSR);
           const next = Number(cleaned[i+1].BSR);
-          if ([prev, curr, next].every(v => Number.isFinite(v) && v > 0)) {
+          if ([prev, curr, next].every(v => Number.isFinite(v) && v >= 500)) {
             const hi = Math.max(prev, next);
             const lo = Math.min(prev, next);
             if (curr > hi * 4 || curr < lo / 4) {
@@ -310,7 +310,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
         for (let i = 1; i < annotated.length; i++) {
           const prev = Number(annotated[i-1].BSR);
           const curr = Number(annotated[i].BSR);
-          if (Number.isFinite(prev) && Number.isFinite(curr) && prev > 0) {
+          if (Number.isFinite(prev) && Number.isFinite(curr) && prev >= 500) {
             const rel = (prev - curr) / prev; // positive => improvement (down)
             annotated[i].BSRTrend = Math.abs(rel) >= 0.03 ? (rel > 0 ? 'down' : 'up') : 'flat';
             annotated[i].BSRDeltaPct = ((curr - prev) / prev) * 100;
@@ -324,7 +324,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
           const p = painted[i-1];
           const c = painted[i];
           const prev = Number(p.BSR), curr = Number(c.BSR);
-          if (Number.isFinite(prev) && Number.isFinite(curr) && prev > 0) {
+          if (Number.isFinite(prev) && Number.isFinite(curr) && prev >= 500) {
             if (curr > prev) { p.BSR_UP = prev; c.BSR_UP = curr; }
             else if (curr < prev) { p.BSR_DOWN = prev; c.BSR_DOWN = curr; }
           }
@@ -338,7 +338,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
         const from = Math.max(0, i - Math.floor(win / 2));
         const to = Math.min(smoothed.length - 1, i + Math.floor(win / 2));
         const slice = smoothed.slice(from, to + 1);
-        const bsrVals = slice.map(r => r.BSR).filter(v => Number.isFinite(v) && v > 0);
+        const bsrVals = slice.map(r => r.BSR).filter(v => Number.isFinite(v) && v >= 500);
         const priceVals = slice.map(r => r.Prezzo).filter(v => Number.isFinite(v) && v > 0);
         if (bsrVals.length) smoothed[i] = { ...smoothed[i], BSR: Math.round(bsrVals.reduce((a,b)=>a+b,0)/bsrVals.length) };
         if (priceVals.length) smoothed[i] = { ...smoothed[i], Prezzo: Number((priceVals.reduce((a,b)=>a+b,0)/priceVals.length).toFixed(2)) };
@@ -347,7 +347,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
       for (let i = 1; i < smoothed.length; i++) {
         const prev = Number(smoothed[i-1].BSR);
         const curr = Number(smoothed[i].BSR);
-        if (Number.isFinite(prev) && Number.isFinite(curr) && prev > 0) {
+        if (Number.isFinite(prev) && Number.isFinite(curr) && prev >= 500) {
           const rel = (prev - curr) / prev; // positive => BSR improved (down)
           smoothed[i].BSRTrend = Math.abs(rel) >= 0.03 ? (rel > 0 ? 'down' : 'up') : 'flat';
           smoothed[i].BSRDeltaPct = ((curr - prev) / prev) * 100;
@@ -362,7 +362,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
         const p = painted[i-1];
         const c = painted[i];
         const prev = Number(p.BSR), curr = Number(c.BSR);
-        if (Number.isFinite(prev) && Number.isFinite(curr) && prev > 0) {
+        if (Number.isFinite(prev) && Number.isFinite(curr) && prev >= 500) {
           if (curr > prev) { // worse
             p.BSR_UP = prev; c.BSR_UP = curr;
           } else if (curr < prev) { // better
@@ -385,7 +385,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
     const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     const sortedKeys = Array.from(groups.keys()).sort((a, b) => a.localeCompare(b));
     // Typical (median) BSR to detect unrealistic '1' values for non-bestsellers
-    const bsrAll = history.map(r => Number(r.BSR)).filter(v => Number.isFinite(v) && v > 0).sort((a,b)=>a-b);
+    const bsrAll = history.map(r => Number(r.BSR)).filter(v => Number.isFinite(v) && v >= 500).sort((a,b)=>a-b);
     const medianBSR = bsrAll.length ? bsrAll[Math.floor(bsrAll.length/2)] : Infinity;
 
     const normalized = [];
@@ -399,7 +399,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
         // Aggregate previous days: keep higher for BSR, Reviews, Price; zero => carry, 1 with high median => carry
         const bsrCand = arr
           .map(s => Number(s.BSR))
-          .filter(v => Number.isFinite(v) && v > 0 && !(v === 1 && medianBSR > 10000));
+          .filter(v => Number.isFinite(v) && v >= 500);
         const revCand = arr
           .map(s => Number(s.Recensioni))
           .filter(v => Number.isFinite(v) && v > 0);
@@ -420,7 +420,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
         arr.sort((a,b)=> (a.ts||0) - (b.ts||0));
         for (const s of arr) {
           let b = Number(s.BSR);
-          if (!Number.isFinite(b) || b <= 0 || (b === 1 && medianBSR > 10000)) b = prevBSR != null ? prevBSR : null;
+          if (!Number.isFinite(b) || b < 500) b = prevBSR != null ? prevBSR : null;
           let r = Number(s.Recensioni);
           if (!Number.isFinite(r) || r <= 0) r = prevRev != null ? prevRev : null;
           let p = Number(s.Prezzo);
@@ -440,7 +440,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
     let ffPrice = null;
     for (const row of normalized) {
       const b = Number(row.BSR);
-      if (!isFinite(b) || b === 0) {
+      if (!isFinite(b) || b < 500) {
         if (ffBSR != null) row.BSR = ffBSR;
       } else {
         ffBSR = b;
@@ -477,7 +477,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
         const prev = Number(normalized[i-1].BSR);
         const curr = Number(normalized[i].BSR);
         const next = Number(normalized[i+1].BSR);
-        if ([prev, curr, next].every(v => Number.isFinite(v) && v > 0)) {
+        if ([prev, curr, next].every(v => Number.isFinite(v) && v >= 500)) {
           const hi = Math.max(prev, next);
           const lo = Math.min(prev, next);
           if (curr > hi * 4 || curr < lo / 4) {
@@ -491,7 +491,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
       for (let i = 1; i < normalized.length; i++) {
         const prev = Number(normalized[i-1].BSR);
         const curr = Number(normalized[i].BSR);
-        if (Number.isFinite(prev) && Number.isFinite(curr) && prev > 0) {
+        if (Number.isFinite(prev) && Number.isFinite(curr) && prev >= 500) {
           const rel = (prev - curr) / prev;
           normalized[i].BSRTrend = Math.abs(rel) >= 0.03 ? (rel > 0 ? 'down' : 'up') : 'flat';
           normalized[i].BSRDeltaPct = ((curr - prev) / prev) * 100;
@@ -506,7 +506,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
         const p = painted[i-1];
         const c = painted[i];
         const prev = Number(p.BSR), curr = Number(c.BSR);
-        if (Number.isFinite(prev) && Number.isFinite(curr) && prev > 0) {
+        if (Number.isFinite(prev) && Number.isFinite(curr) && prev >= 500) {
           if (curr > prev) { p.BSR_UP = prev; c.BSR_UP = curr; }
           else if (curr < prev) { p.BSR_DOWN = prev; c.BSR_DOWN = curr; }
         }
@@ -520,7 +520,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
       const from = Math.max(0, i - Math.floor(win / 2));
       const to = Math.min(smoothed.length - 1, i + Math.floor(win / 2));
       const slice = smoothed.slice(from, to + 1);
-      const bsrVals = slice.map(r => r.BSR).filter(v => Number.isFinite(v) && v > 0);
+      const bsrVals = slice.map(r => r.BSR).filter(v => Number.isFinite(v) && v >= 500);
       const priceVals = slice.map(r => r.Prezzo).filter(v => Number.isFinite(v) && v > 0);
       if (bsrVals.length) smoothed[i] = { ...smoothed[i], BSR: Math.round(bsrVals.reduce((a,b)=>a+b,0)/bsrVals.length) };
       if (priceVals.length) smoothed[i] = { ...smoothed[i], Prezzo: Number((priceVals.reduce((a,b)=>a+b,0)/priceVals.length).toFixed(2)) };
@@ -529,7 +529,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
     for (let i = 1; i < smoothed.length; i++) {
       const prev = Number(smoothed[i-1].BSR);
       const curr = Number(smoothed[i].BSR);
-      if (Number.isFinite(prev) && Number.isFinite(curr) && prev > 0) {
+      if (Number.isFinite(prev) && Number.isFinite(curr) && prev >= 500) {
         const rel = (prev - curr) / prev;
         smoothed[i].BSRTrend = Math.abs(rel) >= 0.03 ? (rel > 0 ? 'down' : 'up') : 'flat';
         smoothed[i].BSRDeltaPct = ((curr - prev) / prev) * 100;
@@ -544,7 +544,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
       const p = painted[i-1];
       const c = painted[i];
       const prev = Number(p.BSR), curr = Number(c.BSR);
-      if (Number.isFinite(prev) && Number.isFinite(curr) && prev > 0) {
+      if (Number.isFinite(prev) && Number.isFinite(curr) && prev >= 500) {
         if (curr > prev) { p.BSR_UP = prev; c.BSR_UP = curr; }
         else if (curr < prev) { p.BSR_DOWN = prev; c.BSR_DOWN = curr; }
       }
@@ -557,7 +557,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
     const arr = dataForChart || [];
     for (let i = arr.length - 1; i >= 0; i--) {
       const b = Number(arr[i]?.BSR);
-      if (Number.isFinite(b) && b > 0) return b;
+      if (Number.isFinite(b) && b >= 500) return b;
     }
     return null;
   }, [dataForChart]);
@@ -569,14 +569,14 @@ const AsinTrendChart = ({ asinData, onClose }) => {
       const xs = (history || [])
         .filter(r => (r?.ts == null || r.ts >= monitorStart))
         .map(r => Number(r?.BSR))
-        .filter(v => Number.isFinite(v) && v > 0);
-      if (Number.isFinite(currentBSR) && currentBSR > 0) xs.push(currentBSR);
+        .filter(v => Number.isFinite(v) && v >= 500);
+      if (Number.isFinite(currentBSR) && currentBSR >= 500) xs.push(currentBSR);
       return xs.length ? Math.min(...xs) : (Number.isFinite(currentBSR) ? currentBSR : null);
     }
     // Default: global min if available, else min in loaded history
     const gmin = Number(bsrRange?.min);
     if (Number.isFinite(gmin) && gmin > 0) return gmin;
-    const xs = (history || []).map(r => Number(r?.BSR)).filter(v => Number.isFinite(v) && v > 0);
+    const xs = (history || []).map(r => Number(r?.BSR)).filter(v => Number.isFinite(v) && v >= 500);
     return xs.length ? Math.min(...xs) : null;
   }, [monitorStart, currentBSR, bsrRange?.min, history]);
   const displayMax = useMemo(() => {
@@ -584,13 +584,13 @@ const AsinTrendChart = ({ asinData, onClose }) => {
       const xs = (history || [])
         .filter(r => (r?.ts == null || r.ts >= monitorStart))
         .map(r => Number(r?.BSR))
-        .filter(v => Number.isFinite(v) && v > 0);
-      if (Number.isFinite(currentBSR) && currentBSR > 0) xs.push(currentBSR);
+        .filter(v => Number.isFinite(v) && v >= 500);
+      if (Number.isFinite(currentBSR) && currentBSR >= 500) xs.push(currentBSR);
       return xs.length ? Math.max(...xs) : (Number.isFinite(currentBSR) ? currentBSR : null);
     }
     const gmax = Number(bsrRange?.max);
     if (Number.isFinite(gmax) && gmax > 0) return gmax;
-    const xs = (history || []).map(r => Number(r?.BSR)).filter(v => Number.isFinite(v) && v > 0);
+    const xs = (history || []).map(r => Number(r?.BSR)).filter(v => Number.isFinite(v) && v >= 500);
     return xs.length ? Math.max(...xs) : null;
   }, [monitorStart, currentBSR, bsrRange?.max, history]);
 
@@ -644,7 +644,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
     let last = null;
     for (let i = arr.length - 1; i >= 0; i--) {
       const b = Number(arr[i]?.BSR);
-      if (Number.isFinite(b) && b > 0) { last = b; lastIdx = i; break; }
+      if (Number.isFinite(b) && b >= 500) { last = b; lastIdx = i; break; }
     }
     if (last == null) return null;
     // Find value ~7 points earlier (approx daily)
@@ -652,7 +652,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
     let seen = 0;
     for (let j = lastIdx - 1; j >= 0; j--) {
       const b = Number(arr[j]?.BSR);
-      if (Number.isFinite(b) && b > 0) {
+      if (Number.isFinite(b) && b >= 500) {
         seen++;
         if (seen === 7) { prev = b; break; }
       }
@@ -681,9 +681,9 @@ const AsinTrendChart = ({ asinData, onClose }) => {
 
   // Visual Y-domain for BSR (mirrors YAxis domain with 5% padding)
   const [visMin, visMax] = useMemo(() => {
-    const xs = (dataForChart || []).map(r => Number(r.BSR)).filter(v => Number.isFinite(v) && v > 0);
-    if (!xs.length) return [1, 100000];
-    const mn = Math.max(1, Math.floor(Math.min(...xs) * 0.95));
+    const xs = (dataForChart || []).map(r => Number(r.BSR)).filter(v => Number.isFinite(v) && v >= 500);
+    if (!xs.length) return [500, 100000];
+    const mn = Math.max(500, Math.floor(Math.min(...xs) * 0.95));
     const mx = Math.ceil(Math.max(...xs) * 1.05);
     return [mn, Math.max(mn + 1, mx)];
   }, [dataForChart]);
@@ -1190,7 +1190,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
                     tickLine={false}
                     allowDecimals={false}
                     allowDataOverflow
-                    domain={[(dataMin) => Math.max(1, Math.floor(dataMin * 0.95)), (dataMax) => Math.ceil(dataMax * 1.05)]}
+                    domain={[(dataMin) => Math.max(500, Math.floor(dataMin * 0.95)), (dataMax) => Math.ceil(dataMax * 1.05)]}
                     width={isMobile ? 36 : 48}
                   />
                   <YAxis

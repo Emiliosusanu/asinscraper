@@ -28,3 +28,4 @@ pnpm-debug.log*
 # Misc
 coverage/
 *.local
+vite.config.js.timestamp-*.mjs
