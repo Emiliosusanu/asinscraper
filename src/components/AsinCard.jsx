@@ -256,7 +256,7 @@ React.useEffect(() => {
         <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg col-span-2">
           <Star className="w-4 h-4 text-yellow-400" />
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:gap-4 w-full">
-            <div className="flex items-center gap-1.5 min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0 whitespace-nowrap">
               <span className="font-semibold text-foreground text-sm sm:text-base leading-tight min-w-0 whitespace-nowrap">
                 {data.rating ? (
                   <>
@@ -265,11 +265,11 @@ React.useEffect(() => {
                   </>
                 ) : '—'}
               </span>
-              <TrendIndicator trend={trend?.reviews} small />
+              <span className="inline-flex items-center shrink-0">
+                <TrendIndicator trend={trend?.reviews} small />
+              </span>
               {Number.isFinite(Number(trend?.reviewsDelta)) && Number(trend?.reviewsDelta) !== 0 && (
-                <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded-full border backdrop-blur font-medium ${Number(trend.reviewsDelta) > 0 ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20' : 'text-red-300 bg-red-500/10 border-red-500/20'}`}
-                >
+                <span className={`inline-flex items-center justify-center shrink-0 h-5 px-1.5 rounded-full border text-[10px] font-medium ${Number(trend.reviewsDelta) > 0 ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20' : 'text-red-300 bg-red-500/10 border-red-500/20'}`}>
                   {Number(trend.reviewsDelta) > 0 ? `+${Number(trend.reviewsDelta)}` : `${Number(trend.reviewsDelta)}`}
                 </span>
               )}

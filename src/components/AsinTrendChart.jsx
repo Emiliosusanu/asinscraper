@@ -86,7 +86,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
   const [smooth, setSmooth] = useLocalStorage('asinTrendChartSmooth', false);
   const [showPrice, setShowPrice] = useLocalStorage('asinTrendChartShowPrice', true);
   const [guardOutliers, setGuardOutliers] = useLocalStorage('asinTrendChartGuardOutliers', true);
-  const [fixReviews, setFixReviews] = useLocalStorage('asinTrendChartFixReviews', true);
+  const [fixReviews, setFixReviews] = useLocalStorage('asinTrendChartFixReviews', false);
   // Global neon mode toggle shared with other charts
   const [neonMode, setNeonMode] = useLocalStorage('neonChartsMode', true);
   // QI baseline monitor: when set, treat current BSR (at toggle time) as the new baseline (min)
@@ -407,8 +407,8 @@ const AsinTrendChart = ({ asinData, onClose }) => {
           .map(s => Number(s.Prezzo))
           .filter(v => Number.isFinite(v) && v > 0);
 
-        const aggBSR = bsrCand.length ? Math.max(...bsrCand) : (prevBSR != null ? prevBSR : null);
-        const aggRev = revCand.length ? Math.max(...revCand) : (prevRev != null ? prevRev : null);
+        const aggBSR = bsrCand.length ? Math.min(...bsrCand) : (prevBSR != null ? prevBSR : null);
+        const aggRev = revCand.length ? Math.min(...revCand) : (prevRev != null ? prevRev : null);
         const aggPrice = priceCand.length ? Math.max(...priceCand) : (prevPrice != null ? prevPrice : null);
 
         normalized.push({ dateKey: key, date: label, BSR: aggBSR, Recensioni: aggRev, Prezzo: aggPrice });

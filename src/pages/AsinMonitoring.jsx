@@ -530,13 +530,10 @@ const handleRefreshAll = async () => {
             <div className="hidden sm:flex items-center gap-2 px-2 py-1 rounded-full border border-border bg-muted/40" title="Recensioni ultimi 7 giorni">
               <span className="text-xs text-muted-foreground">Recensioni 7g</span>
               {Number(poolReviews7d.gained) > 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full border backdrop-blur font-medium text-emerald-300 bg-emerald-500/10 border-emerald-500/20">+{new Intl.NumberFormat('it-IT').format(poolReviews7d.gained)}</span>
+                <span className="inline-flex items-center justify-center h-5 px-1.5 rounded-full border text-[10px] font-medium text-emerald-300 bg-emerald-500/10 border-emerald-500/20">+{new Intl.NumberFormat('it-IT').format(poolReviews7d.gained)}</span>
               )}
               {Number(poolReviews7d.lost) > 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full border backdrop-blur font-medium text-red-300 bg-red-500/10 border-red-500/20">-{new Intl.NumberFormat('it-IT').format(poolReviews7d.lost)}</span>
-              )}
-              {Number(poolReviews7d.gained) === 0 && Number(poolReviews7d.lost) === 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full border backdrop-blur font-medium text-gray-300 bg-white/5 border-white/10">0</span>
+                <span className="inline-flex items-center justify-center h-5 px-1.5 rounded-full border text-[10px] font-medium text-red-300 bg-red-500/10 border-red-500/20">-{new Intl.NumberFormat('it-IT').format(poolReviews7d.lost)}</span>
               )}
             </div>
           </div>
