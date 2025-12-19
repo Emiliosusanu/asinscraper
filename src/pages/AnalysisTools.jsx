@@ -5,6 +5,7 @@ import { TrendingUp, TrendingDown, BarChart2, BrainCircuit, DollarSign, ArrowRig
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/use-toast';
 import { Loader2 } from 'lucide-react';
 
@@ -18,6 +19,131 @@ const formatNumber = (num) => {
 const formatCurrency = (num) => {
   if (typeof num !== 'number') return '€ 0';
   return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(num);
+};
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+const quantile = (arr, q) => {
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  const a = [...arr].sort((x, y) => x - y);
+  const pos = (a.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  if (a[base + 1] === undefined) return a[base];
+  return a[base] + rest * (a[base + 1] - a[base]);
+};
+
+const formatTimeRange = (startHour, bucketHours) => {
+  const endHour = (startHour + bucketHours) % 24;
+  const start = `${pad2(startHour)}:00`;
+  const end = `${pad2(endHour)}:00`;
+  return `${start}–${end}`;
+};
+
+const computeBsrTimeOfDay = (rows, { timezone = 'local', bucketHours = 1 } = {}) => {
+  const bh = Math.max(1, Math.min(6, Number(bucketHours) || 1));
+  const bucketCount = Math.ceil(24 / bh);
+  const buckets = Array.from({ length: bucketCount }, (_, idx) => {
+    const startHour = idx * bh;
+    return {
+      bucketIndex: idx,
+      startHour,
+      label: formatTimeRange(startHour, bh),
+      count: 0,
+      incCount: 0,
+      decCount: 0,
+      sumDelta: 0,
+      incSum: 0,
+      decSum: 0,
+    };
+  });
+
+  const byAsin = new Map();
+  for (const r of rows || []) {
+    const asinId = r?.asin_data_id;
+    const bsr = Number(r?.bsr);
+    const createdAt = r?.created_at;
+    if (!asinId || !createdAt) continue;
+    if (!Number.isFinite(bsr) || bsr <= 0) continue;
+    const list = byAsin.get(asinId) || [];
+    list.push({ created_at: createdAt, bsr });
+    byAsin.set(asinId, list);
+  }
+
+  const hourFromIso = (iso) => {
+    const d = new Date(iso);
+    return timezone === 'utc' ? d.getUTCHours() : d.getHours();
+  };
+
+  for (const arr of byAsin.values()) {
+    if (arr.length < 2) continue;
+    arr.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    for (let i = 1; i < arr.length; i++) {
+      const prev = arr[i - 1];
+      const curr = arr[i];
+      const delta = Number(curr.bsr) - Number(prev.bsr);
+      if (!Number.isFinite(delta) || delta === 0) continue;
+      const h = hourFromIso(curr.created_at);
+      const idx = Math.floor(h / bh);
+      const b = buckets[idx];
+      if (!b) continue;
+      b.count += 1;
+      b.sumDelta += delta;
+      if (delta > 0) {
+        b.incCount += 1;
+        b.incSum += delta;
+      } else {
+        b.decCount += 1;
+        b.decSum += delta;
+      }
+    }
+  }
+
+  let minCount = 20;
+  let scored = buckets.filter(b => b.count >= minCount).map(b => b.decCount / b.count);
+  if (scored.length < 6) {
+    minCount = 8;
+    scored = buckets.filter(b => b.count >= minCount).map(b => b.decCount / b.count);
+  }
+  if (scored.length < 4) {
+    minCount = 1;
+    scored = buckets.filter(b => b.count >= minCount).map(b => b.decCount / b.count);
+  }
+  const q33 = quantile(scored, 1 / 3);
+  const q66 = quantile(scored, 2 / 3);
+
+  const computedBuckets = buckets.map(b => {
+    const avgDelta = b.count ? b.sumDelta / b.count : 0;
+    const incRate = b.count ? b.incCount / b.count : 0;
+    const decRate = b.count ? b.decCount / b.count : 0;
+    const buyScore = decRate;
+    let segment = 'unknown';
+    if (b.count >= minCount && q33 != null && q66 != null) {
+      if (buyScore >= q66) segment = 'green';
+      else if (buyScore <= q33) segment = 'orange';
+      else segment = 'yellow';
+    }
+    return {
+      ...b,
+      avgDelta,
+      incRate,
+      decRate,
+      buyScore,
+      segment,
+      minCount,
+    };
+  });
+
+  const nonEmpty = computedBuckets.filter(b => b.count > 0);
+  const peakWorsen = nonEmpty.length
+    ? nonEmpty.reduce((best, b) => (best == null || b.avgDelta > best.avgDelta ? b : best), null)
+    : null;
+  const peakImprove = nonEmpty.length
+    ? nonEmpty.reduce((best, b) => (best == null || b.avgDelta < best.avgDelta ? b : best), null)
+    : null;
+
+  const totalMoves = computedBuckets.reduce((s, b) => s + b.count, 0);
+  return { buckets: computedBuckets, peakWorsen, peakImprove, totalMoves, bucketHours: bh, minCount, q33, q66 };
 };
 
 const AnalysisCard = ({ icon: Icon, title, value, change, description, color, isLoading }) => (
@@ -66,6 +192,13 @@ const MarketAnalysis = () => {
   const [history, setHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [entries, setEntries] = useState([]);
+
+  const [todPeriod, setTodPeriod] = useState('all');
+  const [todTimezone, setTodTimezone] = useState('local');
+  const [todBucketHours, setTodBucketHours] = useState('1');
+  const [todRows, setTodRows] = useState([]);
+  const [todLoading, setTodLoading] = useState(false);
+  const [todCapped, setTodCapped] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -125,6 +258,60 @@ const MarketAnalysis = () => {
     fetchData();
   }, [user]);
 
+  useEffect(() => {
+    const fetchTimeOfDay = async () => {
+      if (!user?.id) return;
+      setTodLoading(true);
+      setTodCapped(false);
+      try {
+        const pageSize = 1000;
+        const maxRows = 20000;
+        let offset = 0;
+        let out = [];
+        const fromIso = (() => {
+          if (todPeriod === 'all') return null;
+          const days = Number(todPeriod);
+          if (!Number.isFinite(days) || days <= 0) return null;
+          const d = new Date();
+          d.setDate(d.getDate() - days);
+          return d.toISOString();
+        })();
+
+        while (offset < maxRows) {
+          let q = supabase
+            .from('asin_history')
+            .select('asin_data_id, created_at, bsr')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: true });
+          if (fromIso) q = q.gte('created_at', fromIso);
+
+          const { data, error } = await q.range(offset, offset + pageSize - 1);
+          if (error) throw error;
+
+          const rows = Array.isArray(data) ? data : [];
+          out = out.concat(rows);
+          if (rows.length < pageSize) break;
+
+          offset += pageSize;
+        }
+
+        if (out.length >= maxRows) setTodCapped(true);
+        setTodRows(out.slice(0, maxRows));
+      } catch (error) {
+        setTodRows([]);
+        toast({
+          title: 'Errore nel caricamento dello storico BSR',
+          description: error.message,
+          variant: 'destructive',
+        });
+      } finally {
+        setTodLoading(false);
+      }
+    };
+
+    fetchTimeOfDay();
+  }, [user?.id, todPeriod]);
+
   const analysisData = useMemo(() => {
     if (asins.length === 0 && history.length === 0 && entries.length === 0) {
       return {
@@ -174,6 +361,10 @@ const MarketAnalysis = () => {
     return { topPerformers, worstPerformers, totalIncome, bsrAverage };
   }, [asins, history, entries]);
 
+  const todAnalysis = useMemo(() => {
+    return computeBsrTimeOfDay(todRows, { timezone: todTimezone, bucketHours: todBucketHours });
+  }, [todRows, todTimezone, todBucketHours]);
+
   return (
     <>
       <Helmet>
@@ -215,6 +406,150 @@ const MarketAnalysis = () => {
                 isLoading={isLoading}
             />
         </div>
+
+        <Card className="glass-card mb-10">
+          <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle className="text-xl">Movimento BSR per Fascia Oraria</CardTitle>
+              <CardDescription>
+                Basato sulle differenze tra scrapes consecutivi. Verde = più spesso BSR scende (più acquisti), Arancione = più spesso BSR sale.
+              </CardDescription>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+              <Select value={todPeriod} onValueChange={setTodPeriod}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Periodo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tutto lo storico</SelectItem>
+                  <SelectItem value="30">Ultimi 30 giorni</SelectItem>
+                  <SelectItem value="90">Ultimi 90 giorni</SelectItem>
+                  <SelectItem value="180">Ultimi 180 giorni</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={todTimezone} onValueChange={setTodTimezone}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Timezone" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="local">Ora locale</SelectItem>
+                  <SelectItem value="utc">UTC</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={todBucketHours} onValueChange={setTodBucketHours}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Bucket" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Bucket 1h</SelectItem>
+                  <SelectItem value="2">Bucket 2h</SelectItem>
+                  <SelectItem value="3">Bucket 3h</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardHeader>
+
+          <CardContent>
+            {todLoading ? (
+              <div className="flex items-center gap-3 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                <span>Analisi dello storico BSR...</span>
+              </div>
+            ) : todAnalysis.totalMoves === 0 ? (
+              <div className="text-muted-foreground">Dati insufficienti per calcolare il pattern orario (servono scrapes consecutivi con BSR valido).</div>
+            ) : (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-lg border border-border bg-muted/30 p-4">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <TrendingDown className="w-5 h-5 text-green-400" />
+                      <span>Finestra migliore (BSR scende)</span>
+                    </div>
+                    <div className="mt-2 text-sm text-muted-foreground">
+                      {todAnalysis.peakImprove ? (
+                        <div>
+                          <div className="text-foreground font-bold">{todAnalysis.peakImprove.label}</div>
+                          <div>
+                            Media ΔBSR:{' '}
+                            <span className={todAnalysis.peakImprove.avgDelta < 0 ? 'text-green-400 font-semibold' : 'text-muted-foreground'}>
+                              {Math.round(todAnalysis.peakImprove.avgDelta).toLocaleString('it-IT')}
+                            </span>
+                            {' '}| ↓ {Math.round(todAnalysis.peakImprove.decRate * 100)}% (n={todAnalysis.peakImprove.count.toLocaleString('it-IT')})
+                          </div>
+                        </div>
+                      ) : '—'}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-border bg-muted/30 p-4">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <TrendingUp className="w-5 h-5 text-orange-400" />
+                      <span>Finestra peggiore (BSR sale)</span>
+                    </div>
+                    <div className="mt-2 text-sm text-muted-foreground">
+                      {todAnalysis.peakWorsen ? (
+                        <div>
+                          <div className="text-foreground font-bold">{todAnalysis.peakWorsen.label}</div>
+                          <div>
+                            Media ΔBSR:{' '}
+                            <span className={todAnalysis.peakWorsen.avgDelta > 0 ? 'text-orange-400 font-semibold' : 'text-muted-foreground'}>
+                              +{Math.round(todAnalysis.peakWorsen.avgDelta).toLocaleString('it-IT')}
+                            </span>
+                            {' '}| ↑ {Math.round(todAnalysis.peakWorsen.incRate * 100)}% (n={todAnalysis.peakWorsen.count.toLocaleString('it-IT')})
+                          </div>
+                        </div>
+                      ) : '—'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-green-500/70" />Verde</span>
+                    <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-yellow-500/70" />Giallo</span>
+                    <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-orange-500/70" />Arancione</span>
+                    <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-zinc-500/70" />Pochi dati</span>
+                    <span className="ml-auto">Movimenti analizzati: {todAnalysis.totalMoves.toLocaleString('it-IT')}{todCapped ? ' (limitati)' : ''}</span>
+                  </div>
+
+                  <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${todAnalysis.buckets.length}, minmax(0, 1fr))` }}>
+                    {todAnalysis.buckets.map((b) => {
+                      const cls =
+                        b.segment === 'green'
+                          ? 'border-green-500/30 bg-green-500/15 text-green-200'
+                          : b.segment === 'orange'
+                            ? 'border-orange-500/30 bg-orange-500/15 text-orange-200'
+                            : b.segment === 'yellow'
+                              ? 'border-yellow-500/30 bg-yellow-500/15 text-yellow-200'
+                              : 'border-zinc-500/20 bg-zinc-500/10 text-zinc-300';
+
+                      const title = `${b.label}\nMovimenti: ${b.count}\n↑ ${(b.incRate * 100).toFixed(0)}% | ↓ ${(b.decRate * 100).toFixed(0)}%\nMedia ΔBSR: ${Math.round(b.avgDelta)}`;
+                      return (
+                        <div
+                          key={b.bucketIndex}
+                          title={title}
+                          className={`rounded-md border p-2 text-center ${cls}`}
+                        >
+                          <div className="text-xs font-semibold">{b.label}</div>
+                          <div className="text-[11px] opacity-90 mt-1">
+                            ↓ {Math.round(b.decRate * 100)}%
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="text-xs text-muted-foreground">
+                    Segmentazione calcolata su fasce con almeno {todAnalysis.minCount} movimenti (verde/arancione = terzili della tua distribuzione).
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <div className="grid md:grid-cols-2 gap-8">
             <div>

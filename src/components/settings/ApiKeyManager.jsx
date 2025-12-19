@@ -223,7 +223,11 @@ const ApiKeyManager = () => {
               <div className="flex flex-wrap items-center justify-between w-full gap-4">
                 <div className="flex items-center gap-3">
                   <Key className="w-5 h-5 text-accent" />
-                  <span className="font-mono text-muted-foreground">••••••••{key.api_key.slice(-4)}</span>
+                  <span className="font-mono text-muted-foreground">
+                    {typeof key.api_key === 'string' && key.api_key.length >= 4
+                      ? `••••••••${key.api_key.slice(-4)}`
+                      : '••••••••'}
+                  </span>
                   {getStatusPill(key.status)}
                   <span className="px-2 py-0.5 text-[11px] rounded-full border border-white/10 text-gray-300">
                     Reset tra <span className="text-white font-medium">{resetInfoFor(key).daysLeft}g</span>
