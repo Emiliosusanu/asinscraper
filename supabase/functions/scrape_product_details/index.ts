@@ -20,24 +20,28 @@ function extractPageCount(html: string): number | null {
   return null;
 }
 
-// Localized month mapping for date parsing (ASCII-safe keys, no suffix tricks)
-const monthMap: Record<string, number> = {
-  // EN (full + common abbreviations)
+// Localized month mapping for date parsing (ASCII-safe keys)
+const monthMapEn: Record<string, number> = {
   january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
   jan: 1, feb: 2, mar: 3, apr: 4, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12,
-  // IT (full + non-conflicting abbrev.)
+};
+const monthMapIt: Record<string, number> = {
   gennaio: 1, febbraio: 2, marzo: 3, aprile: 4, maggio: 5, giugno: 6, luglio: 7, agosto: 8, settembre: 9, ottobre: 10, novembre: 11, dicembre: 12,
   gen: 1, mag: 5, giu: 6, lug: 7, ago: 8, set: 9, ott: 10, dic: 12,
-  // DE (ASCII; exclude tokens identical to EN to avoid duplicates; 'mai' handled in FR to avoid duplicate key)
+};
+const monthMapDe: Record<string, number> = {
   januar: 1, februar: 2, maerz: 3, marz: 3, juni: 6, juli: 7, oktober: 10, dezember: 12,
   mrz: 3, okt: 10, dez: 12,
-  // FR (ASCII; avoid duplicates like sept/oct/nov/dec which already exist)
+};
+const monthMapFr: Record<string, number> = {
   janvier: 1, fevrier: 2, mars: 3, avril: 4, mai: 5, juin: 6, juillet: 7, aout: 8, septembre: 9, octobre: 10, novembre: 11, decembre: 12,
   janv: 1, fevr: 2, avr: 4, juil: 7,
-  // ES (ASCII; abbrev filtered to avoid duplicates with EN/IT)
+};
+const monthMapEs: Record<string, number> = {
   enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8, septiembre: 9, setiembre: 9, octubre: 10, noviembre: 11, diciembre: 12,
   ene: 1, abr: 4,
 };
+const monthMap: Record<string, number> = { ...monthMapEn, ...monthMapIt, ...monthMapDe, ...monthMapFr, ...monthMapEs };
 
 function mapMonth(nameRaw: string): number | null {
   const n = nameRaw
@@ -160,10 +164,15 @@ function decideBestsellerByRanks(ranks: Array<{ rank: number; name: string }>): 
 // Detect availability status; conservative text extraction
 function detectAvailability(html: string): { code: string | null; text: string | null } {
   const plain = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  const low = plain.toLowerCase();
-  // Common phrases across locales
-  if (/(in stock|disponibile|artikel auf lager|en stock|en existencia)/i.test(plain)) {
-    return { code: 'IN_STOCK', text: (plain.match(/(in stock|disponibile|artikel auf lager|en stock|en existencia)/i)?.[0] || null) };
+  // Prefer explicit In Stock when present
+  const inStockMatch = plain.match(/(in stock|disponibile|artikel auf lager|en stock|en existencia)/i);
+  if (inStockMatch) {
+    return { code: 'IN_STOCK', text: inStockMatch[0] };
+  }
+  // Tighten low stock: require "Only X left in stock" (drop generic "order soon")
+  const lowStockMatch = plain.match(/(only\s+\d+\s+left\s+in\s+stock[^.]*)/i);
+  if (lowStockMatch) {
+    return { code: 'LOW_STOCK', text: lowStockMatch[0] };
   }
   if (/(available to ship|usually ships|ships within|spedizione|disponibile tra|verfügbar in|expédition sous|disponible en)/i.test(plain)) {
     return { code: 'AVAILABLE_SOON', text: (plain.match(/(available to ship[^.]*|usually ships[^.]*|ships within[^.]*|spedizione[^.]*|disponibile tra[^.]*|verfügbar[^.]*|expédition sous[^.]*|disponible en[^.]*)/i)?.[0] || null) };
@@ -421,7 +430,7 @@ async function fetchWithKey(client: any, userId: string, asin: string, country: 
       } catch (_) {}
       try { await client.from('scraper_api_logs').insert({ api_key_id: k.id, asin, country, status: 'success', cost }); } catch (_) {}
       return html;
-    } catch (err) {
+    } catch (err: any) {
       const msg = String(err?.message || err);
       const now = new Date();
       const baseCd = 30_000;
@@ -445,7 +454,7 @@ function parseField(html: string, rx: RegExp): string | null {
   return m ? m[0] : null;
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   // Preflight support
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -582,7 +591,6 @@ serve(async (req) => {
         if (avail.code) availabilityUpdate.availability_code = avail.code;
         // Build update payload; avoid erasing existing publication_date when not parsed
         const updateObj: Record<string, any> = {
-          page_count,
           dimensions_raw,
           trim_size,
           binding,
@@ -595,6 +603,7 @@ serve(async (req) => {
           ...bestsellerUpdate,
           ...availabilityUpdate,
         };
+        if (page_count != null) updateObj.page_count = page_count;
         if (publication_date) updateObj.publication_date = publication_date;
         await client
           .from("asin_data")
@@ -605,7 +614,6 @@ serve(async (req) => {
         await client
           .from("asin_data")
           .update({
-            page_count,
             dimensions_raw,
             trim_size,
             binding,
@@ -625,7 +633,7 @@ serve(async (req) => {
       JSON.stringify({ success: true, data: { page_count, dimensions_raw, trim_size, binding, language, series, publication_date, category, interior_type, interior_confidence, is_bestseller: hasRankData ? top1 : null, stock_status: avail.text || null, availability_code: avail.code || null } }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
-  } catch (e) {
+  } catch (e: any) {
     const msg = String(e?.message || e);
     return new Response(JSON.stringify({ success: false, error: msg }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }

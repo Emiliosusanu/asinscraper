@@ -4,6 +4,7 @@ import { Star, TrendingUp, DollarSign, RefreshCcw, Trash2, Loader2, LineChart, C
 import { Button } from '@/components/ui/button';
 import TrendIndicator from '@/components/TrendIndicator';
 import BestsellerBadge from '@/components/BestsellerBadge';
+import GreatOnKindleBadge from '@/components/GreatOnKindleBadge';
 import { calculateSalesFromBsr, calculateIncome } from '@/lib/incomeCalculator';
 import { estimateRoyalty } from '@/lib/royaltyEstimator';
 
@@ -72,11 +73,14 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
     return new Intl.NumberFormat('it-IT').format(num);
   };
 
-  const stockStatus = (data.stock_status || '').toLowerCase();
-  const availableSoonRx = /(available to ship|usually ships|ships within|spedizione|disponibile tra|verfügbar|expédition sous|disponibile en)/i;
-  const code = (data.availability_code || '').toUpperCase();
-  const isInStock = code === 'IN_STOCK' || /in stock/i.test(stockStatus);
-  const isAvailableSoon = code === 'AVAILABLE_SOON' || availableSoonRx.test(stockStatus);
+  const availability = (data.availability_code || '').toUpperCase();
+  const stockTextRaw = (data.stock_status || '').trim();
+  const stockTextLower = stockTextRaw.toLowerCase();
+  const inStockExactRx = /^\s*(in\s*stock\s*\.?|disponibile\s*(subito)?\s*\.?|en\s*stock\s*\.?|auf\s*lager\s*\.?)\s*$/i;
+  const shipDelayRx = /(available\s*to\s*ship|usually\s*ships|ships\s*within|available\s*to\s*ship\s*in|spedizione|disponibile\s*tra|verf\u00fcgbar|exp\u00e9dition\s*sous|disponible\s*en)/i;
+  const isInStock = availability ? (availability === 'IN_STOCK') : inStockExactRx.test(stockTextRaw);
+  const isLowStock = availability === 'LOW_STOCK';
+  const isShipDelay = availability ? (availability === 'SHIP_DELAY' || availability === 'AVAILABLE_SOON') : shipDelayRx.test(stockTextLower);
   // performance snapshot chips hidden per request
   const sales = calculateSalesFromBsr(data.bsr);
   const effectiveRoyalty = (data.royalty && data.royalty > 0) ? data.royalty : estimateRoyalty(data);
@@ -152,6 +156,11 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
               <BestsellerBadge small={true} />
             </div>
           )}
+          {data.is_great_on_kindle && (
+            <div className="absolute -right-1 -top-1 z-10">
+              <GreatOnKindleBadge small={true} />
+            </div>
+          )}
           {/* elegant moving sheen */}
           <div aria-hidden="true" className="pointer-events-none absolute inset-0">
             <div className="absolute top-0 left-0 h-full w-2/3 -translate-x-[65%] md:group-hover/cover:translate-x-[180%] transition-transform duration-700 ease-in-out bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 blur-[0.5px]" />
@@ -164,8 +173,8 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
         <div className="col-span-12 sm:col-span-3 min-w-0">
           <h3 className="font-semibold text-foreground text-sm sm:text-base line-clamp-2 sm:line-clamp-1">{data.title || 'Titolo non disponibile'}</h3>
           <p className="text-xs text-muted-foreground line-clamp-1">{data.author || 'Autore non disponibile'}</p>
-          <div className={`flex items-center gap-1.5 text-xs mt-1 ${isInStock ? 'text-green-400' : isAvailableSoon ? 'text-yellow-400' : 'text-orange-400'}`}>
-            {isInStock ? <PackageCheck className="w-3 h-3" /> : isAvailableSoon ? <Clock className="w-3 h-3" /> : <PackageX className="w-3 h-3" />}
+          <div className={`flex items-center gap-1.5 text-xs mt-1 ${isInStock ? 'text-green-400' : (isShipDelay || isLowStock) ? 'text-yellow-400' : 'text-red-400'}`}>
+            {isInStock ? <PackageCheck className="w-3 h-3" /> : (isShipDelay || isLowStock) ? <Clock className="w-3 h-3" /> : <PackageX className="w-3 h-3" />}
             <span className="font-semibold truncate">{data.stock_status || 'Sconosciuto'}</span>
           </div>
           {/* Snapshot chips (QI/Mo/Vol) intentionally hidden */}

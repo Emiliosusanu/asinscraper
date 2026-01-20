@@ -5,6 +5,7 @@ import { calculateSalesFromBsr, calculateIncome } from '@/lib/incomeCalculator';
 import { estimateRoyalty } from '@/lib/royaltyEstimator';
 import TrendIndicator from '@/components/TrendIndicator';
 import BestsellerBadge from '@/components/BestsellerBadge';
+import GreatOnKindleBadge from '@/components/GreatOnKindleBadge';
 import AsinAcosGuideModal from '@/components/AsinAcosGuideModal';
 import CircularProgress from '@/components/ui/CircularProgress';
 
@@ -83,14 +84,16 @@ const AsinCard = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart, onE
 
   // (Per-ASIN notification removed for a steadier layout)
 
-// use backend availability_code and fallback to stock_status text
 const availability = (data.availability_code || '').toUpperCase();
-const stockText = (data.stock_status || '').toLowerCase();
-const availableSoonRx = /(available to ship|usually ships|ships within|spedizione|disponibile tra|verfügbar|expédition sous|disponible en)/i;
-const inStock = availability === 'IN_STOCK' || /in stock/i.test(stockText);
-const availableSoon = availability === 'AVAILABLE_SOON' || availableSoonRx.test(stockText);
-const availabilityClass = inStock ? 'text-green-400' : availableSoon ? 'text-yellow-400' : 'text-orange-400';
-const AvailabilityIcon = inStock ? PackageCheck : availableSoon ? Clock : PackageX;
+const stockTextRaw = (data.stock_status || '').trim();
+const stockTextLower = stockTextRaw.toLowerCase();
+const inStockExactRx = /^\s*(in\s*stock\s*\.?|disponibile\s*(subito)?\s*\.?|en\s*stock\s*\.?|auf\s*lager\s*\.?)\s*$/i;
+const shipDelayRx = /(available\s*to\s*ship|usually\s*ships|ships\s*within|available\s*to\s*ship\s*in|spedizione|disponibile\s*tra|verf\u00fcgbar|exp\u00e9dition\s*sous|disponible\s*en)/i;
+const inStock = availability ? (availability === 'IN_STOCK') : inStockExactRx.test(stockTextRaw);
+const isLowStock = availability === 'LOW_STOCK';
+const shipDelay = availability ? (availability === 'SHIP_DELAY' || availability === 'AVAILABLE_SOON') : shipDelayRx.test(stockTextLower);
+const availabilityClass = inStock ? 'text-green-400' : (shipDelay || isLowStock) ? 'text-yellow-400' : 'text-red-400';
+const AvailabilityIcon = inStock ? PackageCheck : (shipDelay || isLowStock) ? Clock : PackageX;
 
 // break-even ACOS calculation
 // breakEvenAcos = (royalty / price) * 100
@@ -192,6 +195,11 @@ React.useEffect(() => {
           {data.is_bestseller && (
             <div className="absolute -left-2 -top-2 z-10">
               <BestsellerBadge small />
+            </div>
+          )}
+          {data.is_great_on_kindle && (
+            <div className="absolute -right-2 -top-2 z-10">
+              <GreatOnKindleBadge small />
             </div>
           )}
           <div className="relative w-24 h-36 overflow-hidden rounded-md ring-1 ring-white/10 transition-colors duration-200 md:group-hover/cover:ring-white/40">

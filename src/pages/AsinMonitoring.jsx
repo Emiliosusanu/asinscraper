@@ -141,6 +141,11 @@ const AsinMonitoring = () => {
   const lastScrollTsRef = useRef(0);
   const [showArchived, setShowArchived] = useLocalStorage('asinMonitoringShowArchived', false);
   const [topBooksMonth, setTopBooksMonth] = useState([]);
+  const [refreshQueue, setRefreshQueue] = useLocalStorage('asinRefreshQueue', []);
+  const queueRunningRef = useRef(false);
+  const refreshQueueRef = useRef(refreshQueue);
+
+  useEffect(() => { refreshQueueRef.current = refreshQueue; }, [refreshQueue]);
 
   
   const { trends, refreshTrends } = useAsinTrends(trackedAsins);
@@ -152,6 +157,28 @@ const AsinMonitoring = () => {
   const [poolReviews7d, setPoolReviews7d] = useState({ gained: 0, lost: 0 });
   const computeReviewsRef = useRef(null);
   const loadTopBooksMonthRef = useRef(null);
+
+  const upsertTrackedAsin = useCallback((row, { prepend = false } = {}) => {
+    if (!row) return;
+    setTrackedAsins(curr => {
+      const key = row.id ? `id:${row.id}` : `asin:${row.asin}:${row.country || 'com'}`;
+      const keyed = new Map(curr.map(a => {
+        const k = a?.id ? `id:${a.id}` : `asin:${a.asin}:${a.country || 'com'}`;
+        return [k, a];
+      }));
+      const existing = keyed.get(key);
+      keyed.set(key, existing ? { ...existing, ...row } : row);
+      const arr = Array.from(keyed.values());
+      if (prepend && !existing) {
+        const moved = arr.filter(a => {
+          const k = a?.id ? `id:${a.id}` : `asin:${a.asin}:${a.country || 'com'}`;
+          return k !== key;
+        });
+        return [row, ...moved];
+      }
+      return arr;
+    });
+  }, []);
 
   const portfolioQi = useMemo(() => {
     const items = (trackedAsins || [])
@@ -456,30 +483,65 @@ useEffect(() => {
   
   const handleAddAsin = async (asin, country) => {
     setIsAdding(true);
-    const existingAsin = trackedAsins.find(item => item.asin === asin && item.country === country);
-    if (existingAsin) {
+    try {
+      const existingAsin = trackedAsins.find(item => item.asin === asin && item.country === country);
+      if (existingAsin) {
         toast({ title: 'ASIN già presente', description: 'Questo ASIN è già nella tua lista di monitoraggio.', variant: 'destructive' });
-        setIsAdding(false);
         return;
+      }
+      const row = await scrapeAndProcessAsin(asin, country, user);
+      if (row) upsertTrackedAsin(row, { prepend: true });
+    } finally {
+      setIsAdding(false);
     }
-    await scrapeAndProcessAsin(asin, country, user);
-    setIsAdding(false);
   };
   
   const handleRefreshSingle = async (asinToRefresh) => {
-    // Skip if already running
-    if (refreshingAsin === asinToRefresh.asin || inProgressAsins.has(asinToRefresh.asin)) return;
-    setRefreshingAsin(asinToRefresh.asin);
+    if (!asinToRefresh) return;
     if (asinToRefresh.archived) {
       toast({ title: 'ASIN archiviato', description: 'Ripristina per poter aggiornare i dati.' });
-      setRefreshingAsin(null);
       return;
     }
-    // Suppress service-level success toast to avoid duplicate toasts with realtime updates
-    await scrapeAndProcessAsin(asinToRefresh.asin, asinToRefresh.country, user, { suppressToast: true });
-    try { await loadTopBooksMonthRef.current?.(); } catch (_) {}
-    setRefreshingAsin(null);
+    const key = `${asinToRefresh.asin}:${asinToRefresh.country || 'com'}`;
+    setRefreshQueue((q = []) => {
+      const exists = (q || []).some(it => `${it.asin}:${it.country || 'com'}` === key);
+      if (exists) return q;
+      return [...q, { asin: asinToRefresh.asin, country: asinToRefresh.country }];
+    });
+    setInProgressAsins(prev => { const next = new Set(prev); next.add(asinToRefresh.asin); return next; });
   };
+
+  const runRefreshQueue = useCallback(async () => {
+    if (queueRunningRef.current) return;
+    if (!user) return;
+    const curr = refreshQueueRef.current || [];
+    if (!curr.length) return;
+    queueRunningRef.current = true;
+    try {
+      // add queued ASINs to in-progress indicator on mount or new additions
+      setInProgressAsins(prev => { const next = new Set(prev); (curr || []).forEach(it => next.add(it.asin)); return next; });
+      while ((refreshQueueRef.current || []).length > 0) {
+        const item = (refreshQueueRef.current || [])[0];
+        try {
+          const row = await scrapeAndProcessAsin(item.asin, item.country, user, { suppressToast: true });
+          if (row) upsertTrackedAsin(row);
+          try { await loadTopBooksMonthRef.current?.(); } catch (_) {}
+        } catch (_) {
+        } finally {
+          setRefreshQueue(q => {
+            const next = Array.isArray(q) ? q.slice(1) : [];
+            refreshQueueRef.current = next;
+            return next;
+          });
+          setInProgressAsins(prev => { const next = new Set(prev); next.delete(item.asin); return next; });
+        }
+      }
+    } finally {
+      queueRunningRef.current = false;
+    }
+  }, [user]);
+
+  useEffect(() => { runRefreshQueue(); }, [refreshQueue, runRefreshQueue]);
 
 const handleRefreshAll = async () => {
   toast({ title: 'Aggiornamento in corso...', description: 'Update la prima parte...' });
@@ -513,8 +575,11 @@ const handleRefreshAll = async () => {
         maxItemAttempts: 3,
         untilSuccess: false,
       },
-      ({ asin, ok, error, final, retry, attempts }) => {
+      ({ asin, ok, data, error, final, retry, attempts }) => {
         if (!ok) console.warn('Scrape fallito', asin, error, final ? '(final)' : retry ? `(retry cycle ${retry})` : '');
+        if (ok && data) {
+          upsertTrackedAsin(data);
+        }
         // mark as completed only when success or final failure
         if (ok || final) {
           setInProgressAsins(prev => {
@@ -597,7 +662,8 @@ const handleRefreshAll = async () => {
         <title>Monitoraggio ASIN - KDP Insights Pro</title>
         <meta name="description" content="Aggiungi e monitora i tuoi ASIN Amazon in tempo reale." />
       </Helmet>
-      <div className="container mx-auto max-w-[1400px] xl:max-w-[1600px] 2xl:max-w-[1800px] pb-24 lg:pb-8">
+      <div className="flex justify-center">
+        <div style={{ zoom: 0.85 }} className="container mx-auto max-w-[1400px] xl:max-w-[1600px] 2xl:max-w-[1800px] pb-24 lg:pb-8">
 
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-3">
@@ -725,6 +791,7 @@ const handleRefreshAll = async () => {
         </div>
         {/* Amazon payout forecast widget */}
         <PayoutWidget />
+        </div>
       </div>
       <AnimatePresence>
         {selectedAsinForChart && (

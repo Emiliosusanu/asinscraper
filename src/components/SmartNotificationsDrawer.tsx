@@ -100,18 +100,21 @@ export const SmartNotificationsDrawer: React.FC = () => {
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [learning, setLearning] = useState<any>(null);
+  const [mode, setMode] = useState<'latest' | '7d' | '30d'>('latest');
+  const [urgentOnly, setUrgentOnly] = useState(false);
+  const [clearedAt, setClearedAt] = useState<number>(0);
 
   const loadAll = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     setError(null);
     try {
-      const sRes = await fetchWithAuth('/api/notifications-summary?mode=latest');
+      const sRes = await fetchWithAuth(`/api/notifications-summary?mode=${mode}`);
       const sJson = await sRes.json();
       if (!sRes.ok) throw new Error(sJson?.error || 'Summary error');
       setSummary(sJson);
 
-      const iRes = await fetchWithAuth('/api/notifications?limit=100');
+      const iRes = await fetchWithAuth(`/api/notifications?limit=100&mode=${mode}`);
       const iJson = await iRes.json();
       if (!iRes.ok) throw new Error(iJson?.error || 'Items error');
       setItems(iJson.items || []);
@@ -120,11 +123,25 @@ export const SmartNotificationsDrawer: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, mode]);
 
   useEffect(() => {
     if (open) loadAll();
   }, [open, loadAll]);
+
+  useEffect(() => {
+    try {
+      const savedMode = localStorage.getItem('notifModeV1');
+      if (savedMode === '7d' || savedMode === '30d' || savedMode === 'latest') setMode(savedMode as any);
+      const cleared = Number(localStorage.getItem('notifClearedAtV1') || '0');
+      if (Number.isFinite(cleared)) setClearedAt(cleared);
+    } catch (_) {}
+  }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem('notifModeV1', mode); } catch (_) {}
+    if (open) loadAll();
+  }, [mode]);
 
   // Load lightweight learning data from localStorage and keep in sync
   useEffect(() => {
@@ -172,8 +189,20 @@ export const SmartNotificationsDrawer: React.FC = () => {
       const recommended = score >= 70;
       return { ...n, _score: score, _recommended: recommended } as NotificationItem & { _score: number; _recommended: boolean };
     });
-    return arr.sort((a, b) => (Number(b._recommended) - Number(a._recommended)) || (b._score - a._score) || (new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
-  }, [items, learning]);
+    let out = arr;
+    const cut = Number(clearedAt || 0);
+    if (cut) out = out.filter((n) => new Date(n.created_at).getTime() > cut);
+    if (urgentOnly) out = out.filter((n) => (mode === '7d') && (n.status === 'better' || n.status === 'worse'));
+    return out.sort((a, b) => (Number(b._recommended) - Number(a._recommended)) || (b._score - a._score) || (new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+  }, [items, learning, urgentOnly, clearedAt, mode]);
+
+  const clearAll = useCallback(() => {
+    const now = Date.now();
+    try { localStorage.setItem('notifClearedAtV1', String(now)); } catch (_) {}
+    setClearedAt(now);
+    setItems([]);
+    setSummary((s) => s ? { ...s, counts: { better: 0, worse: 0, stable: 0 } } : s);
+  }, []);
 
   const markHelpful = async (n: NotificationItem, sign: 'positive' | 'negative' = 'positive') => {
     try {
@@ -214,13 +243,20 @@ export const SmartNotificationsDrawer: React.FC = () => {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="fixed right-0 top-0 bottom-0 h-full w-[96vw] sm:w-[540px] max-w-[540px] translate-x-0 translate-y-0 rounded-none border-l border-slate-700 bg-slate-900 text-white p-0">
+      <DialogContent className="fixed right-0 top-0 bottom-0 h-full w-[96vw] sm:w-[560px] max-w-[560px] translate-x-0 translate-y-0 rounded-none border-l border-slate-700 bg-slate-900 text-white p-0">
         <div className="sticky top-0 z-10 border-b border-slate-700 bg-slate-900 p-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold">Notifiche Intelligenti</span>
             </div>
             <div className="flex items-center gap-2">
+              <div className="hidden sm:flex items-center gap-1">
+                <Button size="sm" variant="outline" className={`${mode==='7d'?'bg-slate-800 border-emerald-500/40 text-emerald-300':'border-slate-600 text-gray-200 hover:bg-slate-800'}`} onClick={() => { setMode('7d'); setUrgentOnly(false); }}>7d</Button>
+                <Button size="sm" variant="outline" className={`${mode==='latest'?'bg-slate-800 border-slate-500 text-gray-100':'border-slate-600 text-gray-200 hover:bg-slate-800'}`} onClick={() => { setMode('latest'); setUrgentOnly(false); }}>Latest</Button>
+                <Button size="sm" variant="outline" className={`${mode==='30d'?'bg-slate-800 border-slate-500 text-gray-100':'border-slate-600 text-gray-200 hover:bg-slate-800'}`} onClick={() => { setMode('30d'); setUrgentOnly(false); }}>30d</Button>
+                <Button size="sm" variant="outline" className={`${urgentOnly?'bg-amber-500/10 border-amber-400/40 text-amber-300':'border-slate-600 text-gray-200 hover:bg-slate-800'}`} onClick={() => { setMode('7d'); setUrgentOnly((v)=>!v); }}>Urgenti 7d</Button>
+              </div>
+              <Button size="sm" variant="outline" className="border-red-500/40 text-red-300 hover:bg-red-500/10" onClick={clearAll}>Pulisci tutto</Button>
               <Button size="sm" variant="outline" className="border-slate-600 text-gray-200 hover:bg-slate-800" onClick={loadAll} disabled={loading}>Ricarica</Button>
             </div>
           </div>
@@ -234,6 +270,8 @@ export const SmartNotificationsDrawer: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="opacity-80">Sentiment:</span>
               <span className="font-medium">{summary?.sentiment || '—'}</span>
+              <span className="opacity-80">Finestra</span>
+              <span className="font-medium">{summary?.windowDays || (mode==='7d'?7:mode==='30d'?30:'—')}g</span>
             </div>
             <div className="flex items-center gap-3">
               <span className="opacity-80">Aggiornato</span>
@@ -244,17 +282,17 @@ export const SmartNotificationsDrawer: React.FC = () => {
           </div>
           <TopDrivers items={items} />
         </div>
-        <div className="p-3 space-y-3 overflow-y-auto h-full">
+        <div className="p-3 space-y-3 overflow-y-auto h-full text-[13px]">
           {error && <div className="text-sm text-red-300">{error}</div>}
           {loading && <div className="text-sm text-gray-300">Caricamento...</div>}
           {!loading && rankedItems.length === 0 && (
             <div className="text-sm text-gray-400">Nessun peggioramento recente.</div>
           )}
           {rankedItems.map((n) => (
-            <div key={n.id} className="rounded-lg border border-slate-700 bg-slate-800 p-3">
+            <div key={n.id} className="rounded-lg border border-slate-700 bg-slate-800 p-3 break-words">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-semibold text-gray-200 truncate mr-2 flex items-center gap-2">
-                  <span>{n.asin}</span>
+                  <span className="truncate max-w-[220px]">{n.asin}</span>
                   {n._recommended && (
                     <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">Consigliato</span>
                   )}
@@ -267,7 +305,7 @@ export const SmartNotificationsDrawer: React.FC = () => {
               <div className="mt-1 text-xs text-gray-400">{new Date(n.created_at).toLocaleString()}</div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {(n.drivers||[]).slice(0,5).map((d, i) => (
-                  <span key={i} className="text-[11px] px-1.5 py-0.5 rounded bg-slate-700 text-gray-100 border border-slate-600">{d}</span>
+                  <span key={i} className="text-[11px] px-1.5 py-0.5 rounded bg-slate-700 text-gray-100 border border-slate-600 break-words max-w-full">{d}</span>
                 ))}
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 text-xs">

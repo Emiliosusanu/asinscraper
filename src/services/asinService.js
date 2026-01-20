@@ -153,6 +153,18 @@ export const scrapeAndProcessAsin = async (asinToScrape, countryCode, user, opts
       console.warn('enrich details failed', e?.message || e);
     }
 
+    // Read back full row (baseline returns only a subset of columns)
+    let fullRow = processedData;
+    try {
+      const { data: row, error: rowErr } = await supabase
+        .from('asin_data')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('asin', asinToScrape)
+        .single();
+      if (!rowErr && row) fullRow = row;
+    } catch (_) {}
+
     if (!suppressToast) {
       if (functionResponse.isNew) {
         toast({ title: 'ASIN Aggiunto!', description: `${processedData.title} è ora monitorato.` });
@@ -161,7 +173,7 @@ export const scrapeAndProcessAsin = async (asinToScrape, countryCode, user, opts
       }
     }
 
-    return processedData;
+    return fullRow;
   } catch (error) {
     console.error(`Final error processing ${asinToScrape}:`, error);
     toast({
@@ -224,8 +236,18 @@ export async function processAllAsins(
               return out;
             };
             const sanitizedData = sanitize(data?.data || null);
-            onProgress?.({ asin, ok: true });
-            return { asin, ok: true, data: sanitizedData };
+            let fullRow = sanitizedData;
+            try {
+              const { data: row, error: rowErr } = await supabase
+                .from('asin_data')
+                .select('*')
+                .eq('user_id', userId)
+                .eq('asin', asin)
+                .single();
+              if (!rowErr && row) fullRow = row;
+            } catch (_) {}
+            onProgress?.({ asin, ok: true, data: fullRow });
+            return { asin, ok: true, data: fullRow };
           } catch (err) {
             const msg = err?.message || String(err);
             console.warn('Scrape failed, will requeue if cycles remain', asin, msg);
@@ -289,8 +311,18 @@ export async function processAllAsins(
           return out;
         };
         const sanitizedData = sanitize(data?.data || null);
-        onProgress?.({ asin: job.asin, ok: true });
-        results.set(job.asin, sanitizedData);
+        let fullRow = sanitizedData;
+        try {
+          const { data: row, error: rowErr } = await supabase
+            .from('asin_data')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('asin', job.asin)
+            .single();
+          if (!rowErr && row) fullRow = row;
+        } catch (_) {}
+        onProgress?.({ asin: job.asin, ok: true, data: fullRow });
+        results.set(job.asin, fullRow);
       } catch (err) {
         const msg = err?.message || String(err);
         onProgress?.({ asin: job.asin, ok: false, error: msg, final: true });
