@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { calculateSalesFromBsr, calculateIncome } from '@/lib/incomeCalculator';
 import { estimateRoyalty } from '@/lib/royaltyEstimator';
 import TrendIndicator from '@/components/TrendIndicator';
+import BsrTrendSparkline from '@/components/BsrTrendSparkline';
 import BestsellerBadge from '@/components/BestsellerBadge';
 import GreatOnKindleBadge from '@/components/GreatOnKindleBadge';
 import AsinAcosGuideModal from '@/components/AsinAcosGuideModal';
@@ -228,15 +229,28 @@ React.useEffect(() => {
              <img className="w-full h-full object-cover shadow-md transform-gpu transition duration-200 md:group-hover/cover:brightness-110 md:group-hover/cover:shadow-[0_0_18px_rgba(255,255,255,0.25)]" alt={`Copertina di ${data.title}`} src={imageUrl} loading="lazy" decoding="async" />
           </div>
         </a>
-        <div className="flex-1">
+        <div className="flex-1 flex items-start justify-between gap-3 min-w-0">
+          <div className="min-w-0 flex-1">
           <h3 className="text-lg font-bold text-foreground line-clamp-2">{data.title || 'Titolo non disponibile'}</h3>
-          <p className="text-sm text-muted-foreground mb-1">{data.author || 'Autore non disponibile'}</p>
-          <p className="text-xs text-muted-foreground/70">ASIN: {data.asin}</p>
+          <div className="flex items-start justify-between gap-3 min-w-0">
+            <div className="min-w-0 flex-1">
+              <div className="relative w-full">
+                <p className="text-sm text-muted-foreground mb-1">{data.author || 'Autore non disponibile'}</p>
+                <p className="text-xs text-muted-foreground/70 font-mono tracking-wide">{data.asin}</p>
+                {trend?.bsr4d?.values?.length >= 2 && (
+                  <div className="absolute right-0 top-1/2 -translate-y-1/2 opacity-90">
+                    <BsrTrendSparkline values={trend?.bsr4d?.values} overall={trend?.bsr4d?.overall} width={38} height={14} />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
           <div className={`flex items-center gap-1.5 text-xs mt-1 ${availabilityClass}`}>
             <AvailabilityIcon className="w-3.5 h-3.5" />
             <span className="font-semibold">{data.stock_status || 'Sconosciuto'}</span>
           </div>
           {/* Snapshot chips (QI/Mo/Vol) intentionally hidden */}
+          </div>
         </div>
       </div>
 
@@ -259,7 +273,9 @@ React.useEffect(() => {
               <p className="font-semibold text-foreground">{formatNumber(data.bsr)}</p>
             </div>
           </div>
-          <TrendIndicator trend={trend?.bsr} />
+          <div className="flex items-center gap-1.5">
+            <TrendIndicator trend={trend?.bsr} />
+          </div>
         </div>
         <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg col-span-2">
           <Star className="w-4 h-4 text-yellow-400" />
@@ -356,6 +372,23 @@ React.useEffect(() => {
           <Clock className="w-3 h-3"/>
           <span>{formatTimeAgo(data.updated_at) || 'Mai'}</span>
         </div>
+        <div className="relative flex items-center justify-end">
+          {Number.isFinite(Number(trend?.qi?.score)) && (
+            <div className="absolute inset-y-0 right-0 flex items-center pointer-events-none opacity-100 group-hover:opacity-0 transition-opacity duration-200">
+              <span
+                className={`inline-flex items-center justify-center h-6 px-2.5 rounded-full border text-[11px] font-semibold tabular-nums ${
+                  Number(trend.qi.score) >= 70
+                    ? 'text-emerald-200 bg-emerald-500/10 border-emerald-500/20'
+                    : Number(trend.qi.score) >= 45
+                      ? 'text-yellow-200 bg-yellow-500/10 border-yellow-500/20'
+                      : 'text-red-200 bg-red-500/10 border-red-500/20'
+                }`}
+                title={`QI ${Math.round(Number(trend.qi.score))}/100`}
+              >
+                QI {Math.round(Number(trend.qi.score))}
+              </span>
+            </div>
+          )}
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
             <Button onClick={handleRefresh} size="icon" variant="ghost" className="w-8 h-8" disabled={isRefreshing}>
               {isRefreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
@@ -375,6 +408,7 @@ React.useEffect(() => {
             <Button onClick={handleDelete} size="icon" variant="ghost" className="w-8 h-8 text-destructive/70 hover:text-destructive hover:bg-destructive/10">
               <Trash2 className="w-4 h-4" />
             </Button>
+        </div>
         </div>
       </div>
       <AsinAcosGuideModal

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import GlobalNotificationsBell from '@/components/GlobalNotificationsBell';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { useLocation } from 'react-router-dom';
 
 const loadPayload = () => {
   try {
@@ -28,6 +29,7 @@ function computePayoutForMonth(year, month) {
 
 const NotificationPet = () => {
   const { user } = useAuth();
+  const location = useLocation();
   const [payload, setPayload] = React.useState(() => loadPayload());
   const [ackTs, setAckTs] = React.useState(() => {
     try { return Number(localStorage.getItem('globalNotificationsAckTs')) || 0; } catch (_) { return 0; }
@@ -39,6 +41,22 @@ const NotificationPet = () => {
   
   const [isDancing, setIsDancing] = React.useState(false);
   const danceTimerRef = React.useRef(null);
+
+  const displayName = React.useMemo(() => {
+    const meta = user?.user_metadata || {};
+    return (
+      meta.full_name ||
+      meta.name ||
+      (user?.email ? user.email.split('@')[0] : null) ||
+      'amico'
+    );
+  }, [user?.id, user?.email, user?.user_metadata]);
+
+  const routeKey = location?.pathname || '/';
+  const [hello, setHello] = React.useState({ show: false, title: '', lines: [] });
+  const helloTimerRef = React.useRef(null);
+  const payloadRef = React.useRef(payload);
+  React.useEffect(() => { payloadRef.current = payload; }, [payload]);
 
   const counts = payload?.counts || { better: 0, worse: 0, stable: 0 };
   const today = new Date();
@@ -214,6 +232,57 @@ const NotificationPet = () => {
   React.useEffect(() => {
     return () => { if (danceTimerRef.current) clearTimeout(danceTimerRef.current); };
   }, []);
+
+  React.useEffect(() => {
+    if (!user) return;
+    const now = Date.now();
+    const seenKey = `petLastSeen:${routeKey}`;
+    const fpKey = `petLastFp:${routeKey}`;
+    let lastSeen = 0;
+    let lastFp = '';
+    try {
+      lastSeen = Number(localStorage.getItem(seenKey)) || 0;
+      lastFp = localStorage.getItem(fpKey) || '';
+    } catch (_) {}
+
+    try { localStorage.setItem(seenKey, String(now)); } catch (_) {}
+
+    const fire = () => {
+      const p = payloadRef.current;
+      const pTs = Number(p?.ts) || 0;
+      const pFp = p?.fingerprint || '';
+      const hasNewPayload = lastSeen ? (pTs > lastSeen) : Boolean(pTs);
+      const hasChanged = Boolean(pFp && lastFp && pFp !== lastFp);
+
+      const c = p?.counts || { better: 0, worse: 0, stable: 0 };
+      const messages = Array.isArray(p?.messages) ? p.messages : [];
+
+      const lines = [];
+      if (!lastSeen) {
+        if (p) {
+          lines.push(`Oggi: ${c.better || 0} miglioramenti, ${c.worse || 0} peggioramenti.`);
+        } else {
+          lines.push('Pronto quando vuoi: aggiorna i dati e controllo le variazioni per te.');
+        }
+      } else if (hasNewPayload || hasChanged) {
+        lines.push(`Da quando sei andato via: ${c.better || 0} miglioramenti, ${c.worse || 0} peggioramenti.`);
+        if (messages[0]) lines.push(messages[0]);
+      } else {
+        lines.push('Nessun cambiamento importante dall’ultima visita.');
+      }
+
+      if (pFp) {
+        try { localStorage.setItem(fpKey, pFp); } catch (_) {}
+      }
+
+      setHello({ show: true, title: `Ciao ${displayName}`, lines });
+      if (helloTimerRef.current) clearTimeout(helloTimerRef.current);
+      helloTimerRef.current = setTimeout(() => setHello((h) => ({ ...h, show: false })), 8000);
+    };
+
+    const t = setTimeout(fire, 180);
+    return () => { clearTimeout(t); if (helloTimerRef.current) clearTimeout(helloTimerRef.current); };
+  }, [user?.id, routeKey, displayName]);
 
   // Month-to-date (MTD) talking mode
   const curKey = `${y}-${pad2(m+1)}`;
@@ -430,9 +499,6 @@ const NotificationPet = () => {
     return () => clearTimers();
   }, [isPayoutDay, mtdEUR, talkPool.length, scheduleNextMessage, clearTimers, pickUniqueIndex, dayKey]);
 
-  // Show pet on payout day or when MTD message is available even without new notifications
-  if (!shouldShow && !isPayoutDay && mtdEUR == null) return null;
-
   return (
     <div className="fixed right-4 bottom-24 lg:bottom-8 z-50">
       <style>{`
@@ -449,6 +515,24 @@ const NotificationPet = () => {
         <GlobalNotificationsBell />
         {/* Help pill removed per request; access via Settings */}
         <AnimatePresence>
+          {hello.show && (
+            <motion.div
+              key="hello-bubble"
+              initial={{ opacity: 0, y: 6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.98 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 22, mass: 0.4 }}
+              className="absolute -top-3 right-14 w-72 bg-slate-900 text-slate-100 border border-white/10 rounded-xl p-3 shadow-xl"
+              aria-live="polite"
+            >
+              <p className="text-sm font-semibold">{hello.title}</p>
+              <div className="mt-1 space-y-1">
+                {(hello.lines || []).slice(0, 3).map((t, i) => (
+                  <p key={i} className="text-xs text-slate-300">{t}</p>
+                ))}
+              </div>
+            </motion.div>
+          )}
           {isPayoutDay && (
             <motion.div
               key="payout-bubble"

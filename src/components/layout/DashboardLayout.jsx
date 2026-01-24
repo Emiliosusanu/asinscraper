@@ -82,7 +82,7 @@ const DashboardLayout = ({ children }) => {
       {isXmas && <SnowOverlay enabled />}
       <div className="flex">
         <Sidebar />
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 lg:ml-64 xl:ml-72 pb-24 lg:pb-8">
+        <main className="flex-1 p-4 sm:p-6 lg:p-6 lg:ml-16 pb-24 lg:pb-8">
           {children}
         </main>
       </div>

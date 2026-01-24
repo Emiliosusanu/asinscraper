@@ -44,22 +44,22 @@ const Sidebar = () => {
   ];
 
   return (
-    <aside className="hidden lg:flex flex-col fixed top-0 left-0 h-screen w-64 xl:w-72 bg-background/60 backdrop-blur-xl border-r border-border/50 transition-all duration-300 ease-in-out z-40">
-      <div className="flex flex-col h-full p-6">
+    <aside className="hidden lg:flex flex-col fixed top-0 left-0 h-screen w-16 bg-background/60 backdrop-blur-xl border-r border-border/50 transition-all duration-300 ease-in-out z-40">
+      <div className="flex flex-col h-full p-3">
         <style>{`
           @keyframes logoBreathe { 0% { transform: translateY(0) rotate(0deg) scale(1);} 50% { transform: translateY(-1px) rotate(1deg) scale(1.02);} 100% { transform: translateY(0) rotate(0deg) scale(1);} }
           @keyframes logoWave { 0%, 100% { transform: rotate(0deg);} 25% { transform: rotate(8deg);} 50% { transform: rotate(0deg);} 75% { transform: rotate(-8deg);} }
         `}</style>
-        <div className="flex items-center gap-3 mb-12">
+        <div className="flex items-center justify-center mb-10">
           <div
             className="relative inline-flex items-center justify-center"
             onMouseEnter={() => setLogoHover(true)}
             onMouseLeave={() => setLogoHover(false)}
-            title="Ciao!"
+            title={displayName}
           >
             <div aria-hidden className="absolute inset-0 rounded-full bg-gradient-to-tr from-primary/20 via-fuchsia-400/10 to-cyan-400/10 blur-md" />
             <Bot
-              className="w-10 h-10 text-primary drop-shadow-sm"
+              className="w-9 h-9 text-primary drop-shadow-sm"
               style={{
                 willChange: 'transform',
                 transformOrigin: '50% 50%',
@@ -76,7 +76,6 @@ const Sidebar = () => {
               </div>
             )}
           </div>
-          <span className="text-2xl font-bold text-foreground truncate max-w-[10rem]" title={displayName}>{displayName}</span>
         </div>
 
         <nav className="flex-1 space-y-2">
@@ -84,8 +83,9 @@ const Sidebar = () => {
             <NavLink
               key={item.to}
               to={item.to}
+              title={item.label}
               className={({ isActive }) =>
-                `flex items-center p-3 rounded-lg transition-colors duration-200 text-muted-foreground hover:text-foreground hover:bg-muted/50 ${
+                `flex items-center justify-center min-w-0 p-2 rounded-lg transition-colors duration-200 text-muted-foreground hover:text-foreground hover:bg-muted/50 ${
                   isActive
                     ? 'bg-primary/10 text-primary font-semibold'
                     : ''
@@ -93,25 +93,21 @@ const Sidebar = () => {
               }
             >
               <item.icon className="w-5 h-5" />
-              <span className="ml-4 font-medium">{item.label}</span>
+              <span className="sr-only">{item.label}</span>
             </NavLink>
           ))}
         </nav>
 
         <div>
           <div className="border-t border-border/50 pt-4">
-            <div className="flex items-center p-3">
-              <div className="flex-1 overflow-hidden">
-                <p className="text-sm font-semibold text-foreground truncate">{user?.email}</p>
-              </div>
-            </div>
             <Button
               onClick={handleSignOut}
               variant="ghost"
-              className="w-full flex items-center justify-start text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              title="Sign Out"
+              className="w-full flex items-center justify-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
             >
               <LogOut className="w-5 h-5" />
-              <span className="ml-4">Sign Out</span>
+              <span className="sr-only">Sign Out</span>
             </Button>
           </div>
         </div>

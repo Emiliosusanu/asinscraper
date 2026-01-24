@@ -54,8 +54,44 @@ const useAsinTrends = (asins) => {
       const allHistory = historyByAsin[asin.id] || [];
       const relevantHistory = allHistory.slice(0, 4); // Get last 4 scrapes for stable trend arrows
 
+      const bsr4d = (() => {
+        const days = 10;
+        const dayMin = new Map();
+        const keysDesc = [];
+        for (const row of allHistory) {
+          const ts = row?.created_at ? new Date(row.created_at) : null;
+          if (!ts || Number.isNaN(ts.getTime())) continue;
+          const key = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-${String(ts.getDate()).padStart(2, '0')}`;
+          const b = Number(row?.bsr);
+          if (!Number.isFinite(b) || b <= 0) continue;
+          const prev = dayMin.get(key);
+          if (!Number.isFinite(prev)) keysDesc.push(key);
+          if (!Number.isFinite(prev) || b < prev) dayMin.set(key, b);
+          if (keysDesc.length > days) break;
+        }
+
+        const keys = keysDesc.slice(0, days).reverse();
+        const values = keys.map((k) => dayMin.get(k)).filter((v) => Number.isFinite(v) && v > 0);
+
+        if (values.length < 2) return { values, overall: 'flat' };
+
+        const first = values[0];
+        const last = values[values.length - 1];
+        const delta = last - first;
+        const rel = first ? Math.abs(delta / first) : 0;
+        const abs = Math.abs(delta);
+        const stepScore = values.slice(1).reduce((s, v, i) => {
+          const prev = values[i];
+          const d = v - prev; // positive = worse
+          if (Math.abs(d) < 15) return s;
+          return s + (d < 0 ? 1 : -1);
+        }, 0);
+        const overall = (rel < 0.01 && abs < 15) ? 'flat' : ((stepScore === 0) ? (delta < 0 ? 'good' : 'bad') : (stepScore > 0 ? 'good' : 'bad'));
+        return { values, overall };
+      })();
+
       if (relevantHistory.length < 2) {
-        newTrends[asin.id] = { bsr: 'stable', reviews: 'stable', income: 'stable', price: 'stable', acos: 'stable' };
+        newTrends[asin.id] = { bsr: 'stable', reviews: 'stable', income: 'stable', price: 'stable', acos: 'stable', bsr4d };
         continue;
       }
 
@@ -276,6 +312,7 @@ const useAsinTrends = (asins) => {
         income: incomeTrend,
         price: priceTrend,
         acos: acosTrend,
+        bsr4d,
         qi: { score: qiScore, min: minEver, max: maxEver, current: currBsr },
         summary: {
           items: summaryItems,

@@ -662,30 +662,54 @@ const handleRefreshAll = async () => {
         <title>Monitoraggio ASIN - KDP Insights Pro</title>
         <meta name="description" content="Aggiungi e monitora i tuoi ASIN Amazon in tempo reale." />
       </Helmet>
-      <div className="flex justify-center">
-        <div style={{ zoom: 0.85 }} className="container mx-auto max-w-[1400px] xl:max-w-[1600px] 2xl:max-w-[1800px] pb-24 lg:pb-8">
+      <div className="w-full">
+        <div className="w-full pb-24 lg:pb-8">
 
         <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-semibold text-foreground">I tuoi ASIN ({filteredAndSortedAsins.length})</h2>
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-2xl font-semibold text-foreground">
+              I tuoi ASIN
+              <span className="ml-2 inline-flex items-center justify-center h-6 px-2 rounded-full border border-white/10 bg-white/5 text-xs font-semibold tabular-nums text-foreground/90">
+                {filteredAndSortedAsins.length}
+              </span>
+            </h2>
             {portfolioQi && (
-              <div className="hidden sm:flex items-center gap-2 px-2 py-1 rounded-full border border-border bg-muted/40" title={`${Math.round(portfolioQi.avg)}/100 • ${portfolioQi.label} • ${portfolioQi.count} libri`}>
-                <span className="text-xs text-muted-foreground">QI Portafoglio</span>
-                <div className="relative w-20 h-1.5 rounded-full overflow-hidden bg-gradient-to-r from-red-500 via-yellow-500 to-emerald-500/70">
+              <div
+                className="hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-full border border-white/10 bg-gradient-to-r from-white/[0.06] to-white/[0.03] shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset] hover:border-white/20 transition-colors"
+                title={`${Math.round(portfolioQi.avg)}/100 • ${portfolioQi.label} • ${portfolioQi.count} libri`}
+              >
+                <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80">QI Portafoglio</span>
+                <div className="relative w-24 h-1.5 rounded-full overflow-hidden bg-gradient-to-r from-red-500 via-yellow-500 to-emerald-500/70">
                   <div className="absolute inset-y-0 left-0 bg-white/70" style={{ width: `${Math.round(portfolioQi.avg)}%` }} />
                 </div>
-                <span className="text-xs font-semibold">{Math.round(portfolioQi.avg)}</span>
-                <span className="text-xs text-muted-foreground">{portfolioQi.label}</span>
+                <span className="text-xs font-semibold tabular-nums text-foreground">{Math.round(portfolioQi.avg)}</span>
+                <span className={`text-xs font-semibold ${portfolioQi.avg >= 70 ? 'text-emerald-300' : portfolioQi.avg >= 45 ? 'text-yellow-300' : 'text-red-300'}`}>{portfolioQi.label}</span>
               </div>
             )}
-            <div className="hidden sm:flex items-center gap-2 px-2 py-1 rounded-full border border-border bg-muted/40" title="Recensioni ultimi 7 giorni">
-              <span className="text-xs text-muted-foreground">Recensioni 7g</span>
-              {Number(poolReviews7d.gained) > 0 && (
-                <span className="inline-flex items-center justify-center h-5 px-1.5 rounded-full border text-[10px] font-medium text-emerald-300 bg-emerald-500/10 border-emerald-500/20">+{new Intl.NumberFormat('it-IT').format(poolReviews7d.gained)}</span>
-              )}
-              {Number(poolReviews7d.lost) > 0 && (
-                <span className="inline-flex items-center justify-center h-5 px-1.5 rounded-full border text-[10px] font-medium text-red-300 bg-red-500/10 border-red-500/20">-{new Intl.NumberFormat('it-IT').format(poolReviews7d.lost)}</span>
-              )}
+            <div
+              className="hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-full border border-white/10 bg-gradient-to-r from-white/[0.06] to-white/[0.03] shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset] hover:border-white/20 transition-colors"
+              title="Recensioni ultimi 7 giorni"
+            >
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80">Recensioni 7g</span>
+              {(() => {
+                const gained = Number(poolReviews7d.gained) || 0;
+                const lost = Number(poolReviews7d.lost) || 0;
+                const net = gained - lost;
+                const fmt = (n) => new Intl.NumberFormat('it-IT').format(Math.abs(n));
+                return (
+                  <>
+                    {gained > 0 && (
+                      <span className="inline-flex items-center justify-center h-5 px-1.5 rounded-full border text-[10px] font-medium tabular-nums text-emerald-300 bg-emerald-500/10 border-emerald-500/20">+{fmt(gained)}</span>
+                    )}
+                    {lost > 0 && (
+                      <span className="inline-flex items-center justify-center h-5 px-1.5 rounded-full border text-[10px] font-medium tabular-nums text-red-300 bg-red-500/10 border-red-500/20">-{fmt(lost)}</span>
+                    )}
+                    {(gained > 0 || lost > 0) && (
+                      <span className={`inline-flex items-center justify-center h-5 px-1.5 rounded-full border text-[10px] font-medium tabular-nums ${net > 0 ? 'text-emerald-200 bg-emerald-500/5 border-emerald-500/15' : net < 0 ? 'text-red-200 bg-red-500/5 border-red-500/15' : 'text-slate-200 bg-white/5 border-white/10'}`}>{net > 0 ? `+${fmt(net)}` : net < 0 ? `-${fmt(net)}` : '0'}</span>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
           <div className="flex gap-2">
@@ -719,7 +743,7 @@ const handleRefreshAll = async () => {
             <p className="text-muted-foreground mb-6">Inizia ad aggiungere i tuoi prodotti per vederli qui.</p>
           </motion.div>
         ) : viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-5">
             {filteredAndSortedAsins.map((item) => (
               <div key={item.id}>
                 <AsinCard 
@@ -766,6 +790,14 @@ const handleRefreshAll = async () => {
           </div>
         ) : (
           <div className="glass-card overflow-hidden">
+            <div className="hidden sm:grid grid-cols-12 gap-3 sm:gap-4 px-4 py-2 border-b border-border/20 bg-white/[0.03]">
+              <div className="col-span-3 text-[11px] uppercase tracking-wide text-muted-foreground/70">Titolo</div>
+              <div className="col-span-2 text-[11px] uppercase tracking-wide text-muted-foreground/70">Prezzo</div>
+              <div className="col-span-2 text-[11px] uppercase tracking-wide text-muted-foreground/70">BSR</div>
+              <div className="col-span-2 text-[11px] uppercase tracking-wide text-muted-foreground/70">Rating</div>
+              <div className="col-span-2 text-[11px] uppercase tracking-wide text-muted-foreground/70">Guadagno</div>
+              <div className="col-span-1 text-[11px] uppercase tracking-wide text-muted-foreground/70 text-right">Agg.</div>
+            </div>
             {filteredAndSortedAsins.map((item) => (
               <div key={item.id}>
                 <AsinListItem

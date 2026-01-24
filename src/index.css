@@ -91,6 +91,12 @@ html {
   text-size-adjust: 100%;
 }
 
+@media (min-width: 1024px) {
+  html {
+    zoom: 0.9;
+  }
+}
+
 /* applica la variante webkit solo su browser webkit (Safari/iOS) */
 @supports (-webkit-touch-callout: none) {
   html {

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Star, TrendingUp, DollarSign, RefreshCcw, Trash2, Loader2, LineChart, Clock, PackageCheck, PackageX, Edit, MessageCircle, BarChart2, Calendar, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TrendIndicator from '@/components/TrendIndicator';
+import BsrTrendSparkline from '@/components/BsrTrendSparkline';
 import BestsellerBadge from '@/components/BestsellerBadge';
 import GreatOnKindleBadge from '@/components/GreatOnKindleBadge';
 import { calculateSalesFromBsr, calculateIncome } from '@/lib/incomeCalculator';
@@ -124,7 +125,7 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
           onShowChart?.(data);
         }
       }}
-      className={`relative flex items-center gap-2 sm:gap-4 p-2 sm:p-4 border-b border-border/20 last:border-b-0 hover:bg-muted/30 transition-colors transition-shadow duration-200 md:hover:shadow-[0_0_22px_rgba(255,255,255,0.12)] group focus:outline-none focus-visible:ring-2 focus-visible:ring-white/20 rounded-md ${isRefreshing ? 'ring-1 ring-emerald-400/40 bg-emerald-500/[0.04]' : ''}`}
+      className={`relative flex items-center gap-2 sm:gap-4 p-2.5 sm:p-3 border-b border-border/20 last:border-b-0 hover:bg-muted/30 transition-colors transition-shadow duration-200 md:hover:shadow-[0_0_22px_rgba(255,255,255,0.12)] group focus:outline-none focus-visible:ring-2 focus-visible:ring-white/20 rounded-md ${isRefreshing ? 'ring-1 ring-emerald-400/40 bg-emerald-500/[0.04]' : ''}`}
       style={{ '--mx': '50%', '--my': '50%', contain: 'paint', willChange: 'box-shadow' }}
     >
       <style>{`
@@ -171,8 +172,36 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
       
       <div className="flex-1 grid grid-cols-12 gap-3 sm:gap-4 items-center min-w-0">
         <div className="col-span-12 sm:col-span-3 min-w-0">
-          <h3 className="font-semibold text-foreground text-sm sm:text-base line-clamp-2 sm:line-clamp-1">{data.title || 'Titolo non disponibile'}</h3>
-          <p className="text-xs text-muted-foreground line-clamp-1">{data.author || 'Autore non disponibile'}</p>
+          <div className="flex items-start justify-between gap-3 min-w-0">
+            <div className="min-w-0 flex-1">
+              {Number.isFinite(Number(trend?.qi?.score)) && (
+                <div className="sm:hidden mb-1 flex items-center justify-end">
+                  <span
+                    className={`inline-flex items-center justify-center h-5 px-2 rounded-full border text-[10px] font-semibold tabular-nums ${
+                      Number(trend.qi.score) >= 70
+                        ? 'text-emerald-200 bg-emerald-500/10 border-emerald-500/20'
+                        : Number(trend.qi.score) >= 45
+                          ? 'text-yellow-200 bg-yellow-500/10 border-yellow-500/20'
+                          : 'text-red-200 bg-red-500/10 border-red-500/20'
+                    }`}
+                    title={`QI ${Math.round(Number(trend.qi.score))}/100`}
+                  >
+                    QI {Math.round(Number(trend.qi.score))}
+                  </span>
+                </div>
+              )}
+              <h3 className="font-semibold text-foreground text-sm sm:text-base line-clamp-2 sm:line-clamp-1">{data.title || 'Titolo non disponibile'}</h3>
+              <div className="mt-0.5 relative w-full">
+                <p className="text-xs text-muted-foreground line-clamp-1">{data.author || 'Autore non disponibile'}</p>
+                <p className="text-[11px] text-muted-foreground/80 font-mono tracking-wide truncate">{data.asin}</p>
+                {trend?.bsr4d?.values?.length >= 2 && (
+                  <div className="hidden sm:block absolute right-0 top-1/2 -translate-y-1/2 opacity-90">
+                    <BsrTrendSparkline values={trend?.bsr4d?.values} overall={trend?.bsr4d?.overall} width={38} height={14} />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
           <div className={`flex items-center gap-1.5 text-xs mt-1 ${isInStock ? 'text-green-400' : (isShipDelay || isLowStock) ? 'text-yellow-400' : 'text-red-400'}`}>
             {isInStock ? <PackageCheck className="w-3 h-3" /> : (isShipDelay || isLowStock) ? <Clock className="w-3 h-3" /> : <PackageX className="w-3 h-3" />}
             <span className="font-semibold truncate">{data.stock_status || 'Sconosciuto'}</span>
@@ -207,23 +236,25 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
         <div className="hidden sm:flex col-span-6 sm:col-span-2 items-center gap-2 text-sm">
           <DollarSign className="w-4 h-4 text-green-400 flex-shrink-0" />
           <div className="flex items-center gap-1">
-            <span className="font-semibold text-foreground">{data.price > 0 ? `€${data.price.toFixed(2)}` : '—'}</span>
+            <span className="font-semibold text-foreground tabular-nums">{data.price > 0 ? `€${data.price.toFixed(2)}` : '—'}</span>
             <TrendIndicator trend={trend?.price} />
           </div>
         </div>
 
         <div className="hidden sm:flex col-span-6 sm:col-span-2 items-center gap-2 text-sm">
           <TrendingUp className="w-4 h-4 text-secondary flex-shrink-0" />
-          <div className="flex items-center gap-1">
-            <span className="font-semibold text-foreground">{formatNumber(data.bsr)}</span>
-            <TrendIndicator trend={trend?.bsr} />
+          <div className="flex items-center justify-between gap-2 w-full min-w-0">
+            <div className="flex items-center gap-1 min-w-0">
+              <span className="font-semibold text-foreground tabular-nums">{formatNumber(data.bsr)}</span>
+              <TrendIndicator trend={trend?.bsr} />
+            </div>
           </div>
         </div>
 
         <div className="hidden sm:flex col-span-6 sm:col-span-2 items-center gap-2 text-sm">
           <Star className="w-4 h-4 text-yellow-400 flex-shrink-0" />
           <div className="flex items-center gap-1">
-            <span className="font-semibold text-foreground">{data.rating ? `${data.rating} (${formatNumber(data.review_count)})` : '—'}</span>
+            <span className="font-semibold text-foreground tabular-nums">{data.rating ? `${data.rating} (${formatNumber(data.review_count)})` : '—'}</span>
             <TrendIndicator trend={trend?.reviews} />
           </div>
         </div>
@@ -231,7 +262,7 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
         <div className="hidden sm:flex col-span-6 sm:col-span-2 items-center gap-2 text-sm">
           <BarChart2 className="w-4 h-4 text-accent flex-shrink-0" />
            <div className="flex items-center gap-1">
-            <span className="font-semibold text-foreground whitespace-nowrap">{formatIncomeRange(income.monthly)}</span>
+            <span className="font-semibold text-foreground whitespace-nowrap tabular-nums">{formatIncomeRange(income.monthly)}</span>
             <TrendIndicator trend={trend?.income} />
           </div>
         </div>
