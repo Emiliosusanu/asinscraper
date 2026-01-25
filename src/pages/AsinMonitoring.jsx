@@ -132,6 +132,7 @@ const AsinMonitoring = () => {
   const [isRefreshAllDialogOpen, setIsRefreshAllDialogOpen] = useState(false);
   const [refreshingAsin, setRefreshingAsin] = useState(null);
   const [viewMode, setViewMode] = useLocalStorage('asinMonitoringViewMode', 'grid');
+  const effectiveViewMode = 'grid';
   const [selectedAsinForChart, setSelectedAsinForChart] = useState(null);
   const [selectedAsinForRoyalty, setSelectedAsinForRoyalty] = useState(null);
   const [selectedAsinForReviews, setSelectedAsinForReviews] = useState(null);
@@ -143,6 +144,10 @@ const AsinMonitoring = () => {
   const [inProgressAsins, setInProgressAsins] = useState(new Set());
   const lastScrollTsRef = useRef(0);
   const [showArchived, setShowArchived] = useLocalStorage('asinMonitoringShowArchived', false);
+
+  useEffect(() => {
+    if (viewMode !== 'grid') setViewMode('grid');
+  }, [viewMode, setViewMode]);
 
   const displayName = useMemo(() => {
     const meta = user?.user_metadata || {};
@@ -796,17 +801,17 @@ const handleRefreshAll = async () => {
               <span className="hidden sm:inline">{showArchived ? 'Archiviati' : 'Attivi'}</span>
             </Button>
             <div className="bg-white/[0.04] p-1 rounded-full border border-white/10 sm:bg-muted/50 sm:border-border">
-              <Button onClick={() => setViewMode('grid')} variant={viewMode === 'grid' ? 'default' : 'ghost'} size="xs" className={viewMode === 'grid' ? 'bg-emerald-300 text-black rounded-full shadow-[0_0_22px_rgba(16,185,129,0.25)] sm:bg-primary sm:text-primary-foreground' : 'text-muted-foreground rounded-full'}>
+              <Button onClick={() => setViewMode('grid')} variant={effectiveViewMode === 'grid' ? 'default' : 'ghost'} size="xs" className={effectiveViewMode === 'grid' ? 'bg-emerald-300 text-black rounded-full shadow-[0_0_22px_rgba(16,185,129,0.25)] sm:bg-primary sm:text-primary-foreground' : 'text-muted-foreground rounded-full'}>
                 <LayoutGrid className="w-4 h-4" />
               </Button>
-              <Button onClick={() => setViewMode('list')} variant={viewMode === 'list' ? 'default' : 'ghost'} size="xs" className={viewMode === 'list' ? 'bg-emerald-300 text-black rounded-full shadow-[0_0_22px_rgba(16,185,129,0.25)] sm:bg-primary sm:text-primary-foreground' : 'text-muted-foreground rounded-full'}>
+              <Button disabled onClick={() => setViewMode('list')} variant={effectiveViewMode === 'list' ? 'default' : 'ghost'} size="xs" className={(effectiveViewMode === 'list' ? 'bg-emerald-300 text-black rounded-full shadow-[0_0_22px_rgba(16,185,129,0.25)] sm:bg-primary sm:text-primary-foreground' : 'text-muted-foreground rounded-full') + ' opacity-40 cursor-not-allowed'}>
                 <List className="w-4 h-4" />
               </Button>
             </div>
           </div>
         </div>
         
-        {viewMode === 'list' && (
+        {effectiveViewMode === 'list' && (
           <AsinListFilters sort={sort} setSort={setSort} filter={filter} setFilter={setFilter} />
         )}
 
@@ -818,7 +823,7 @@ const handleRefreshAll = async () => {
             <h3 className="text-2xl font-semibold text-foreground mb-2">Nessun ASIN monitorato</h3>
             <p className="text-muted-foreground mb-6">Inizia ad aggiungere i tuoi prodotti per vederli qui.</p>
           </motion.div>
-        ) : viewMode === 'grid' ? (
+        ) : effectiveViewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-5">
             {filteredAndSortedAsins.map((item) => (
               <div key={item.id}>

@@ -89,11 +89,12 @@ body {
 /* usa lo standard ovunque */
 html {
   text-size-adjust: 100%;
+  zoom: 0.9;
 }
 
-@media (min-width: 1024px) {
+@supports not (zoom: 1) {
   html {
-    zoom: 0.9;
+    font-size: 90%;
   }
 }
 
