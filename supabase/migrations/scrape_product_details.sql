@@ -414,6 +414,9 @@ function resolvePaperbackPrice($: any) {
 /* ======================= Supabase ======================= */
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const MAILGUN_API_KEY = Deno.env.get("MAILGUN_API_KEY") ?? "";
+const MAILGUN_DOMAIN = Deno.env.get("MAILGUN_DOMAIN") ?? "";
+const MAILGUN_FROM = Deno.env.get("MAILGUN_FROM") ?? "";
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -423,6 +426,89 @@ const corsHeaders: Record<string, string> = {
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
+
+async function getAccountEmail(userId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (error) return null;
+    const email = (data as any)?.user?.email;
+    return email ? String(email) : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
+async function sendMailgunEmail(toEmail: string, subject: string, text: string): Promise<{ ok: boolean; error?: string }> {
+  if (!MAILGUN_API_KEY || !MAILGUN_DOMAIN || !MAILGUN_FROM) {
+    return { ok: false, error: "Missing Mailgun env" };
+  }
+  try {
+    const url = `https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`;
+    const body = new URLSearchParams();
+    body.set("from", MAILGUN_FROM);
+    body.set("to", toEmail);
+    body.set("subject", subject);
+    body.set("text", text);
+    const auth = btoa(`api:${MAILGUN_API_KEY}`);
+    const r = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body,
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      return { ok: false, error: `Mailgun error ${r.status}: ${t}` };
+    }
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || String(e) };
+  }
+}
+
+async function sendDedupedEmailAlert(
+  userId: string,
+  asin: string,
+  alertType: string,
+  dedupeKey: string,
+  toEmail: string | null,
+  subject: string,
+  text: string,
+): Promise<void> {
+  if (!toEmail) return;
+  const { error: insErr } = await supabaseAdmin.from("email_alert_log").insert({
+    user_id: userId,
+    asin,
+    alert_type: alertType,
+    dedupe_key: dedupeKey,
+  });
+  if (insErr) {
+    const cd = String((insErr as any)?.code || "");
+    const msg = String((insErr as any)?.message || "");
+    if (cd === "23505" || /duplicate key value/i.test(msg)) return;
+    console.error("email_alert_log insert error", insErr);
+    return;
+  }
+  const sent = await sendMailgunEmail(toEmail, subject, text);
+  if (!sent.ok) {
+    try {
+      await supabaseAdmin.from("email_alert_log").delete().eq("user_id", userId).eq("dedupe_key", dedupeKey);
+    } catch (_e) {}
+    console.error("Mailgun send failed", sent.error);
+  }
+}
+
+function normalizeAvailabilityForChange(code: string | null): string | null {
+  const c = String(code || "").toUpperCase();
+  if (c === "LOW_STOCK") return "IN_STOCK";
+  if (c === "SHIP_DELAY") return "IN_STOCK";
+  if (c === "OTHER_SELLERS") return "IN_STOCK";
+  if (c === "AVAILABLE_SOON") return "IN_STOCK";
+  if (c === "PREORDER") return "IN_STOCK";
+  return c ? c : null;
+}
 
 /* ======================= Rotation & retries ======================= */
 const MAX_RETRIES = 6;
@@ -570,6 +656,24 @@ serve(async (req) => {
       });
     }
 
+    let alertSettings: any = null;
+    try {
+      const { data } = await supabaseAdmin
+        .from("settings")
+        .select("stock_alert_enabled, stock_alert_on_change, bsr_alert_enabled, bsr_alert_threshold_pct")
+        .eq("user_id", userId)
+        .maybeSingle();
+      alertSettings = data || null;
+    } catch (_e) {}
+    const stockAlertEnabled = !!alertSettings?.stock_alert_enabled;
+    const stockAlertOnChange = !!alertSettings?.stock_alert_on_change;
+    const bsrAlertEnabled = !!alertSettings?.bsr_alert_enabled;
+    const bsrAlertThresholdPct = Number.isFinite(Number(alertSettings?.bsr_alert_threshold_pct))
+      ? Number(alertSettings?.bsr_alert_threshold_pct)
+      : 20;
+    const wantsAnyEmailAlert = stockAlertEnabled || stockAlertOnChange || bsrAlertEnabled;
+    const accountEmail = wantsAnyEmailAlert ? await getAccountEmail(userId) : null;
+
     let attempts = 0;
     const excludedKeyIds: string[] = [];
 
@@ -690,10 +794,10 @@ serve(async (req) => {
 
         const { data: existingAsin } = await supabaseAdmin
           .from("asin_data")
-          .select("id, price, bsr, review_count, stock_status")
+          .select("id, title, price, bsr, review_count, stock_status, availability_code")
           .eq("user_id", userId)
           .eq("asin", asin)
-          .single();
+          .maybeSingle();
 
         const finalBsr = rawBsr > 0 ? rawBsr : existingAsin?.bsr ?? null;
 
@@ -777,6 +881,75 @@ serve(async (req) => {
               `BSR cambiato da ${existingAsin.bsr} a ${finalBsr}`,
               { old: existingAsin.bsr, new: finalBsr },
             );
+          }
+
+          if ((existingAsin as any).availability_code !== availability_code) {
+            await logAsinEvent(
+              userId,
+              upsertedAsin.id,
+              "STOCK_STATUS_CHANGED",
+              `Disponibilità cambiata da ${(existingAsin as any).availability_code} a ${availability_code}`,
+              { old: (existingAsin as any).availability_code, new: availability_code },
+            );
+          }
+
+          if (wantsAnyEmailAlert && accountEmail) {
+            const dayKey = new Date().toISOString().slice(0, 10);
+            const prevCode = String((existingAsin as any).availability_code || "") || null;
+            const newCode = String(availability_code || "") || null;
+            const prevEff = normalizeAvailabilityForChange(prevCode);
+            const newEff = normalizeAvailabilityForChange(newCode);
+
+            const inStockCodes = new Set(["IN_STOCK", "LOW_STOCK", "SHIP_DELAY", "POD", "OTHER_SELLERS", "MADE_TO_ORDER"]);
+            const outOfStockCodes = new Set(["OOS", "UNAVAILABLE", "OUT_OF_STOCK"]);
+
+            if (stockAlertOnChange && prevEff && newEff && prevEff !== newEff) {
+              const dedupeKey = `stock_change:${asin}:${prevEff}->${newEff}:${dayKey}`;
+              const subject = `[KDPInsights] Stock changed (${asin})`;
+              const body = [
+                `ASIN: ${asin}`,
+                `Title: ${(existingAsin as any).title || title || ""}`,
+                `Previous: ${prevCode}`,
+                `Now: ${newCode}`,
+                `Time (UTC): ${new Date().toISOString()}`,
+              ].filter(Boolean).join("\n");
+              await sendDedupedEmailAlert(userId, asin, "stock_change", dedupeKey, accountEmail, subject, body);
+            }
+
+            if (stockAlertEnabled && prevCode && newCode && prevCode !== newCode && inStockCodes.has(String(prevCode).toUpperCase()) && outOfStockCodes.has(String(newCode).toUpperCase())) {
+              const dedupeKey = `stock_oos:${asin}:${String(newCode).toUpperCase()}:${dayKey}`;
+              const subject = `[KDPInsights] Out of stock (${asin})`;
+              const body = [
+                `ASIN: ${asin}`,
+                `Title: ${(existingAsin as any).title || title || ""}`,
+                `Previous: ${prevCode}`,
+                `Now: ${newCode}`,
+                `Time (UTC): ${new Date().toISOString()}`,
+              ].filter(Boolean).join("\n");
+              await sendDedupedEmailAlert(userId, asin, "stock_oos", dedupeKey, accountEmail, subject, body);
+            }
+
+            if (bsrAlertEnabled) {
+              const oldBsr = Number((existingAsin as any).bsr);
+              const newBsr = Number(finalBsr);
+              if (Number.isFinite(oldBsr) && oldBsr > 0 && Number.isFinite(newBsr) && newBsr > 0 && Number.isFinite(bsrAlertThresholdPct) && bsrAlertThresholdPct > 0) {
+                const pct = Math.abs((newBsr - oldBsr) / oldBsr) * 100;
+                if (Number.isFinite(pct) && pct >= bsrAlertThresholdPct) {
+                  const direction = newBsr < oldBsr ? "DOWN" : "UP";
+                  const dedupeKey = `bsr_pct:${asin}:${direction}:${Math.round(bsrAlertThresholdPct)}:${dayKey}`;
+                  const subject = `[KDPInsights] BSR ${direction} ${pct.toFixed(1)}% (${asin})`;
+                  const body = [
+                    `ASIN: ${asin}`,
+                    `Title: ${(existingAsin as any).title || title || ""}`,
+                    `Previous BSR: ${oldBsr}`,
+                    `New BSR: ${newBsr}`,
+                    `Change: ${pct.toFixed(1)}% (threshold ${Number(bsrAlertThresholdPct).toFixed(0)}%)`,
+                    `Time (UTC): ${new Date().toISOString()}`,
+                  ].filter(Boolean).join("\n");
+                  await sendDedupedEmailAlert(userId, asin, "bsr_pct", dedupeKey, accountEmail, subject, body);
+                }
+              }
+            }
           }
         } else {
           await logAsinEvent(userId, upsertedAsin.id, "ASIN_ADDED", "ASIN aggiunto al monitoraggio", {

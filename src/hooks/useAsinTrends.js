@@ -30,6 +30,22 @@ const useAsinTrends = (asins) => {
     setIsLoading(true);
     const asinIds = asins.map(a => a.id);
 
+    let bsrRangesByAsin = {};
+    try {
+      const { data: rangesData } = await supabase.rpc('get_asin_bsr_ranges', { asin_ids: asinIds });
+      if (Array.isArray(rangesData)) {
+        bsrRangesByAsin = rangesData.reduce((acc, r) => {
+          if (r?.asin_data_id) {
+            acc[r.asin_data_id] = {
+              min: Number(r?.min_bsr),
+              max: Number(r?.max_bsr),
+            };
+          }
+          return acc;
+        }, {});
+      }
+    } catch (_) {}
+
     const { data: historyData, error } = await supabase
       .from('asin_history')
       .select('asin_data_id, bsr, review_count, created_at, price')
@@ -54,13 +70,20 @@ const useAsinTrends = (asins) => {
       const allHistory = historyByAsin[asin.id] || [];
       const relevantHistory = allHistory.slice(0, 4); // Get last 4 scrapes for stable trend arrows
 
-      const bsr4d = (() => {
-        const days = 10;
+      const computeBsrSpark = (days, windowDays = null) => {
+        const cutoff = (Number.isFinite(Number(windowDays)) && Number(windowDays) > 0)
+          ? (() => {
+              const c = new Date();
+              c.setDate(c.getDate() - Number(windowDays));
+              return c;
+            })()
+          : null;
         const dayMin = new Map();
         const keysDesc = [];
         for (const row of allHistory) {
           const ts = row?.created_at ? new Date(row.created_at) : null;
           if (!ts || Number.isNaN(ts.getTime())) continue;
+          if (cutoff && ts < cutoff) break;
           const key = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-${String(ts.getDate()).padStart(2, '0')}`;
           const b = Number(row?.bsr);
           if (!Number.isFinite(b) || b <= 0) continue;
@@ -88,10 +111,13 @@ const useAsinTrends = (asins) => {
         }, 0);
         const overall = (rel < 0.01 && abs < 15) ? 'flat' : ((stepScore === 0) ? (delta < 0 ? 'good' : 'bad') : (stepScore > 0 ? 'good' : 'bad'));
         return { values, overall };
-      })();
+      };
+
+      const bsr4d = computeBsrSpark(17, 17);
+      const bsr30d = computeBsrSpark(30, 30);
 
       if (relevantHistory.length < 2) {
-        newTrends[asin.id] = { bsr: 'stable', reviews: 'stable', income: 'stable', price: 'stable', acos: 'stable', bsr4d };
+        newTrends[asin.id] = { bsr: 'stable', reviews: 'stable', income: 'stable', price: 'stable', acos: 'stable', bsr4d, bsr30d };
         continue;
       }
 
@@ -286,21 +312,28 @@ const useAsinTrends = (asins) => {
       }
 
       // Compute QI score from BSR range, ignoring sub-1000 values as unrealistic (launch spikes)
-      const bsrVals = (allHistory || []).map((r) => Number(r.bsr)).filter((v) => Number.isFinite(v) && v > 0);
-      const FLOOR_MIN = 1000; // ignore BSR < 1000 for baseline
-      const baseVals = bsrVals.filter((v) => v >= FLOOR_MIN);
-      const minEver = baseVals.length ? Math.min(...baseVals) : FLOOR_MIN;
-      const maxEver = baseVals.length ? Math.max(...baseVals) : (bsrVals.length ? Math.max(...bsrVals) : null);
       const currBsr = (Number.isFinite(Number(asin.bsr)) && Number(asin.bsr) > 0)
         ? Number(asin.bsr)
         : (Number.isFinite(Number(current?.bsr)) && Number(current?.bsr) > 0 ? Number(current?.bsr) : null);
+      const dbRange = bsrRangesByAsin?.[asin.id] || null;
+      let minEver = (dbRange && Number.isFinite(dbRange.min) && dbRange.min > 0) ? dbRange.min : null;
+      let maxEver = (dbRange && Number.isFinite(dbRange.max) && dbRange.max > 0) ? dbRange.max : null;
+      if (!Number.isFinite(minEver) || !Number.isFinite(maxEver)) {
+        const bsrVals = (allHistory || []).map((r) => Number(r.bsr)).filter((v) => Number.isFinite(v) && v > 0);
+        if (Number.isFinite(currBsr) && currBsr > 0) bsrVals.push(currBsr);
+        minEver = bsrVals.length ? Math.min(...bsrVals) : null;
+        maxEver = bsrVals.length ? Math.max(...bsrVals) : null;
+      }
+      if (Number.isFinite(currBsr) && currBsr > 0) {
+        if (Number.isFinite(minEver) && currBsr < minEver) minEver = currBsr;
+        if (Number.isFinite(maxEver) && currBsr > maxEver) maxEver = currBsr;
+      }
       let qiScore = null;
-      if (!Number.isFinite(currBsr)) {
+      if (!Number.isFinite(currBsr) || !Number.isFinite(minEver) || !Number.isFinite(maxEver)) {
         qiScore = null;
-      } else if (baseVals.length === 0) {
-        // No baseline >= 1000 available: treat current (sub-1000 period) as perfect
+      } else if (maxEver === minEver) {
         qiScore = 100;
-      } else if (Number.isFinite(maxEver) && maxEver > minEver) {
+      } else {
         const ratio = (maxEver - currBsr) / (maxEver - minEver);
         qiScore = Math.round(Math.max(0, Math.min(1, ratio)) * 100);
       }
@@ -313,6 +346,7 @@ const useAsinTrends = (asins) => {
         price: priceTrend,
         acos: acosTrend,
         bsr4d,
+        bsr30d,
         qi: { score: qiScore, min: minEver, max: maxEver, current: currBsr },
         summary: {
           items: summaryItems,

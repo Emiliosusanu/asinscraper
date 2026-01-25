@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.4?target=deno&bundle";
 import * as cheerio from "https://esm.sh/cheerio@1.0.0-rc.12?target=deno&bundle";
+
+declare const Deno: any;
 /* ======================= Helpers ======================= */ function getTextSafe($, sel) {
   const t = $(sel).first().text();
   return t ? t.replace(/\s+/g, " ").trim() : "";
@@ -161,9 +163,9 @@ function parsePublicationDateText(input) {
   const monthMap = {
     january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
     gennaio: 1, febbraio: 2, marzo: 3, aprile: 4, maggio: 5, giugno: 6, luglio: 7, agosto: 8, settembre: 9, ottobre: 10, novembre: 11, dicembre: 12,
-    januar: 1, februar: 2, marz: 3, maerz: 3, april: 4, mai: 5, juni: 6, juli: 7, august: 8, september: 9, oktober: 10, november: 11, dezember: 12,
-    janvier: 1, fevrier: 2, mars: 3, avril: 4, mai: 5, juin: 6, juillet: 7, aout: 8, septembre: 9, octobre: 10, novembre: 11, decembre: 12,
-    enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8, septiembre: 9, octubre: 10, noviembre: 11, diciembre: 12
+    januar: 1, februar: 2, marz: 3, maerz: 3, mai: 5, juni: 6, juli: 7, oktober: 10, dezember: 12,
+    janvier: 1, fevrier: 2, mars: 3, avril: 4, juin: 6, juillet: 7, aout: 8, septembre: 9, octobre: 10, decembre: 12,
+    enero: 1, febrero: 2, abril: 4, mayo: 5, junio: 6, julio: 7, septiembre: 9, octubre: 10, noviembre: 11, diciembre: 12
   };
   const mdY = clean.match(/\b([A-Za-z.]+)\s+(\d{1,2})[,]?\s+(\d{4})\b/);
   if (mdY) {
@@ -234,11 +236,27 @@ function parseAvailability($) {
     code: "UNKNOWN"
   };
 }
+
 /* ======================= Supabase ======================= */ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const MAILGUN_API_KEY = Deno.env.get("MAILGUN_API_KEY") ?? "";
-const MAILGUN_DOMAIN = Deno.env.get("MAILGUN_DOMAIN") ?? "";
-const MAILGUN_FROM = Deno.env.get("MAILGUN_FROM") ?? "";
+
+function readMailgunEnv() {
+  const apiKey = Deno.env.get("MAILGUN_API_KEY") ?? "";
+  const domain = Deno.env.get("MAILGUN_DOMAIN") ?? "";
+  const from = Deno.env.get("MAILGUN_FROM") ?? "";
+  const apiBase = Deno.env.get("MAILGUN_API_BASE") ?? "";
+  return { apiKey, domain, from, apiBase };
+}
+
+function getMissingMailgunEnv(): string[] {
+  const { apiKey, domain, from } = readMailgunEnv();
+  const missing: string[] = [];
+  if (!apiKey) missing.push("MAILGUN_API_KEY");
+  if (!domain) missing.push("MAILGUN_DOMAIN");
+  if (!from) missing.push("MAILGUN_FROM");
+  return missing;
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
@@ -261,18 +279,21 @@ async function getAccountEmail(userId) {
 }
 
 async function sendMailgunEmail(toEmail, subject, text) {
-  if (!MAILGUN_API_KEY || !MAILGUN_DOMAIN || !MAILGUN_FROM) return {
+  const missing = getMissingMailgunEnv();
+  if (missing.length) return {
     ok: false,
-    error: "Missing Mailgun env"
+    error: `Missing Mailgun env: ${missing.join(", ")}`
   };
   try {
-    const url = `https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`;
+    const { apiKey, domain, from, apiBase } = readMailgunEnv();
+    const base = (apiBase || "https://api.mailgun.net").replace(/\/+$/, "");
+    const url = `${base}/v3/${domain}/messages`;
     const body = new URLSearchParams();
-    body.set("from", MAILGUN_FROM);
+    body.set("from", from);
     body.set("to", toEmail);
     body.set("subject", subject);
     body.set("text", text);
-    const auth = btoa(`api:${MAILGUN_API_KEY}`);
+    const auth = btoa(`api:${apiKey}`);
     const r = await fetch(url, {
       method: "POST",
       headers: {

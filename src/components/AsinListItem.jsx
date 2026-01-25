@@ -87,6 +87,12 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
   const effectiveRoyalty = (data.royalty && data.royalty > 0) ? data.royalty : estimateRoyalty(data);
   const income = calculateIncome(sales, effectiveRoyalty);
 
+  const qiScore = trend?.qi?.score;
+  const hasQiScore = typeof qiScore === 'number' && Number.isFinite(qiScore);
+
+  const spark = (trend?.bsr30d?.values?.length >= 2) ? trend?.bsr30d : trend?.bsr4d;
+  const sparkLabel = (trend?.bsr30d?.values?.length >= 2) ? 'BSR ultimi 30 giorni' : 'BSR ultimi 17 giorni';
+
   const formatIncomeRange = (range) => {
     if (!range || (range[0] === 0 && range[1] === 0)) return '€0.00';
     if (range[0] === range[1]) return `€${range[0].toFixed(2)}`;
@@ -152,14 +158,28 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
       />
       <a href={amazonLink} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 relative group/cover">
         <div className="relative w-12 h-16 sm:w-16 sm:h-24 rounded-md overflow-hidden ring-1 ring-white/10 transition-colors duration-200 md:group-hover/cover:ring-white/40">
-          {data.is_bestseller && (
-            <div className="absolute -left-1 -top-1 z-10">
-              <BestsellerBadge small={true} />
-            </div>
-          )}
-          {data.is_great_on_kindle && (
-            <div className="absolute -right-1 -top-1 z-10">
-              <GreatOnKindleBadge small={true} />
+          {(data.is_bestseller || data.is_great_on_kindle) && (
+            <div className="absolute left-1 top-1 z-10 flex flex-col gap-1 items-start">
+              {data.is_bestseller && (
+                <>
+                  <div className="sm:hidden">
+                    <BestsellerBadge micro />
+                  </div>
+                  <div className="hidden sm:block">
+                    <BestsellerBadge small={true} />
+                  </div>
+                </>
+              )}
+              {data.is_great_on_kindle && (
+                <>
+                  <div className="sm:hidden">
+                    <GreatOnKindleBadge micro />
+                  </div>
+                  <div className="hidden sm:block">
+                    <GreatOnKindleBadge small={true} />
+                  </div>
+                </>
+              )}
             </div>
           )}
           {/* elegant moving sheen */}
@@ -174,37 +194,28 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
         <div className="col-span-12 sm:col-span-3 min-w-0">
           <div className="flex items-start justify-between gap-3 min-w-0">
             <div className="min-w-0 flex-1">
-              {Number.isFinite(Number(trend?.qi?.score)) && (
-                <div className="sm:hidden mb-1 flex items-center justify-end">
-                  <span
-                    className={`inline-flex items-center justify-center h-5 px-2 rounded-full border text-[10px] font-semibold tabular-nums ${
-                      Number(trend.qi.score) >= 70
-                        ? 'text-emerald-200 bg-emerald-500/10 border-emerald-500/20'
-                        : Number(trend.qi.score) >= 45
-                          ? 'text-yellow-200 bg-yellow-500/10 border-yellow-500/20'
-                          : 'text-red-200 bg-red-500/10 border-red-500/20'
-                    }`}
-                    title={`QI ${Math.round(Number(trend.qi.score))}/100`}
-                  >
-                    QI {Math.round(Number(trend.qi.score))}
-                  </span>
-                </div>
-              )}
               <h3 className="font-semibold text-foreground text-sm sm:text-base line-clamp-2 sm:line-clamp-1">{data.title || 'Titolo non disponibile'}</h3>
               <div className="mt-0.5 relative w-full">
                 <p className="text-xs text-muted-foreground line-clamp-1">{data.author || 'Autore non disponibile'}</p>
                 <p className="text-[11px] text-muted-foreground/80 font-mono tracking-wide truncate">{data.asin}</p>
-                {trend?.bsr4d?.values?.length >= 2 && (
-                  <div className="hidden sm:block absolute right-0 top-1/2 -translate-y-1/2 opacity-90">
-                    <BsrTrendSparkline values={trend?.bsr4d?.values} overall={trend?.bsr4d?.overall} width={38} height={14} />
-                  </div>
-                )}
               </div>
             </div>
           </div>
           <div className={`flex items-center gap-1.5 text-xs mt-1 ${isInStock ? 'text-green-400' : (isShipDelay || isLowStock) ? 'text-yellow-400' : 'text-red-400'}`}>
             {isInStock ? <PackageCheck className="w-3 h-3" /> : (isShipDelay || isLowStock) ? <Clock className="w-3 h-3" /> : <PackageX className="w-3 h-3" />}
-            <span className="font-semibold truncate">{data.stock_status || 'Sconosciuto'}</span>
+            <span className="font-semibold text-sm truncate">{data.stock_status || 'Sconosciuto'}</span>
+          </div>
+          <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground mt-1 whitespace-nowrap">
+            <span className="inline-flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              <span>{formatTimeAgo(data.updated_at) || 'Mai'}</span>
+            </span>
+            {data.publication_date && (
+              <span className="inline-flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                <span>{new Date(data.publication_date).toLocaleDateString('it-IT')}</span>
+              </span>
+            )}
           </div>
           {/* Snapshot chips (QI/Mo/Vol) intentionally hidden */}
           {/* Mobile chips summary */}
@@ -215,10 +226,31 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
             <span className="inline-flex items-center gap-1 bg-muted/50 text-foreground px-2 py-1 rounded text-[11px]"><Star className="w-3 h-3 text-yellow-400" />{data.rating ? `${data.rating} (${formatNumber(data.review_count)})` : '—'}</span>
             <span className="inline-flex items-center gap-1 bg-muted/50 text-foreground px-2 py-1 rounded text-[11px] whitespace-nowrap"><BarChart2 className="w-3 h-3 text-accent" />{income ? `${formatIncomeRange(income.monthly)}` : '—'}</span>
             <span className="inline-flex items-center gap-1 bg-muted/50 text-muted-foreground px-2 py-1 rounded text-[11px] whitespace-nowrap"><Clock className="w-3 h-3" />{formatTimeAgo(data.updated_at) || 'Mai'}</span>
+            {hasQiScore && (
+              <span
+                className={`inline-flex items-center justify-center h-[22px] px-2 rounded-full border text-[11px] font-semibold tabular-nums whitespace-nowrap ${
+                  qiScore >= 70
+                    ? 'text-emerald-200 bg-emerald-500/10 border-emerald-500/20'
+                    : qiScore >= 45
+                      ? 'text-yellow-200 bg-yellow-500/10 border-yellow-500/20'
+                      : 'text-red-200 bg-red-500/10 border-red-500/20'
+                }`}
+                title={`QI ${Math.round(qiScore)}/100`}
+              >
+                QI {Math.round(qiScore)}
+              </span>
+            )}
             {data.publication_date && (
               <span className="inline-flex items-center gap-1 bg-muted/50 text-muted-foreground px-2 py-1 rounded text-[11px] whitespace-nowrap"><Calendar className="w-3 h-3" />{new Date(data.publication_date).toLocaleDateString('it-IT')}</span>
             )}
           </div>
+          {spark?.values?.length >= 2 && (
+            <div className="sm:hidden mt-2 flex justify-center">
+              <div className="opacity-90">
+                <BsrTrendSparkline values={spark?.values} overall={spark?.overall} width={74} height={12} title={sparkLabel} />
+              </div>
+            </div>
+          )}
           {/* Mobile quick actions */}
           <div className="sm:hidden flex items-center gap-1.5 mt-1 -mr-2">
             <Button onClick={handleRefresh} size="icon" variant="ghost" className="w-8 h-8" disabled={isRefreshing} aria-label="Aggiorna">
@@ -251,6 +283,14 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
           </div>
         </div>
 
+        <div className="hidden sm:flex col-span-6 sm:col-span-1 items-center justify-center">
+          {spark?.values?.length >= 2 && (
+            <div className="opacity-90" title={sparkLabel}>
+              <BsrTrendSparkline values={spark?.values} overall={spark?.overall} width={52} height={16} title={sparkLabel} />
+            </div>
+          )}
+        </div>
+
         <div className="hidden sm:flex col-span-6 sm:col-span-2 items-center gap-2 text-sm">
           <Star className="w-4 h-4 text-yellow-400 flex-shrink-0" />
           <div className="flex items-center gap-1">
@@ -265,19 +305,6 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
             <span className="font-semibold text-foreground whitespace-nowrap tabular-nums">{formatIncomeRange(income.monthly)}</span>
             <TrendIndicator trend={trend?.income} />
           </div>
-        </div>
-
-        <div className="hidden sm:flex col-span-12 sm:col-span-1 flex-col items-end gap-1 text-xs text-muted-foreground">
-          <div className="flex items-center gap-1">
-            <Clock className="w-3 h-3" />
-            <span>{formatTimeAgo(data.updated_at) || 'Mai'}</span>
-          </div>
-           {data.publication_date && (
-            <div className="flex items-center gap-1">
-              <Calendar className="w-3 h-3" />
-              <span>{new Date(data.publication_date).toLocaleDateString('it-IT')}</span>
-            </div>
-          )}
         </div>
 
         <div className="hidden sm:flex col-span-12 sm:col-span-12 items-center justify-end gap-0 -mr-2">

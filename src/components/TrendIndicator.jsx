@@ -24,6 +24,9 @@ const TrendIndicator = ({ trend, small = false }) => {
 
   const { Icon, color } = trendConfig[trend];
   const sizeCls = small ? 'w-4 h-4' : 'w-5 h-5';
+  const iconProps = trend === 'stable'
+    ? { strokeWidth: 2.1, strokeLinecap: 'round', strokeLinejoin: 'round' }
+    : { strokeWidth: 2.1, strokeLinecap: 'butt', strokeLinejoin: 'miter' };
 
   return (
     <motion.div
@@ -34,7 +37,7 @@ const TrendIndicator = ({ trend, small = false }) => {
       transition={{ duration: 0.4, type: 'spring', stiffness: 300, damping: 20 }}
       className={`inline-flex items-center ${color}`}
     >
-      <Icon className={sizeCls} />
+      <Icon className={sizeCls} {...iconProps} />
     </motion.div>
   );
 };

@@ -5,6 +5,7 @@ import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { 
   Select, 
@@ -18,8 +19,13 @@ const AutomationSettings = () => {
     const { user } = useAuth();
     const [runsPerDay, setRunsPerDay] = useState(1);
     const [startHour, setStartHour] = useState(8);
+    const [stockAlertEnabled, setStockAlertEnabled] = useState(false);
+    const [stockAlertOnChange, setStockAlertOnChange] = useState(false);
+    const [bsrAlertEnabled, setBsrAlertEnabled] = useState(false);
+    const [bsrAlertThresholdPct, setBsrAlertThresholdPct] = useState(20);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [isTestingEmail, setIsTestingEmail] = useState(false);
 
     const frequencyMap = { 0: 1, 1: 2, 2: 4, 3: 6 };
     const valueMap = { 1: 0, 2: 1, 4: 2, 6: 3 };
@@ -29,7 +35,7 @@ const AutomationSettings = () => {
         setIsLoading(true);
         const { data, error } = await supabase
             .from('settings')
-            .select('scraping_interval, scraping_start_hour')
+            .select('scraping_interval, scraping_start_hour, stock_alert_enabled, stock_alert_on_change, bsr_alert_enabled, bsr_alert_threshold_pct')
             .eq('user_id', user.id)
             .single();
 
@@ -38,6 +44,10 @@ const AutomationSettings = () => {
         } else if (data) {
             setRunsPerDay(parseInt(data.scraping_interval, 10) || 1);
             setStartHour(data.scraping_start_hour || 8);
+            setStockAlertEnabled(!!data.stock_alert_enabled);
+            setStockAlertOnChange(!!data.stock_alert_on_change);
+            setBsrAlertEnabled(!!data.bsr_alert_enabled);
+            setBsrAlertThresholdPct(Number.isFinite(Number(data.bsr_alert_threshold_pct)) ? Number(data.bsr_alert_threshold_pct) : 20);
         }
         setIsLoading(false);
     }, [user]);
@@ -54,11 +64,15 @@ const AutomationSettings = () => {
         setIsSaving(true);
         const { error } = await supabase
             .from('settings')
-            .update({ 
+            .upsert({
+                user_id: user.id,
                 scraping_interval: runsPerDay.toString(),
-                scraping_start_hour: startHour 
-            })
-            .eq('user_id', user.id);
+                scraping_start_hour: startHour,
+                stock_alert_enabled: stockAlertEnabled,
+                stock_alert_on_change: stockAlertOnChange,
+                bsr_alert_enabled: bsrAlertEnabled,
+                bsr_alert_threshold_pct: Number.isFinite(Number(bsrAlertThresholdPct)) ? Number(bsrAlertThresholdPct) : 20,
+            }, { onConflict: 'user_id' });
 
         if (error) {
             toast({ title: "Errore nel salvare le impostazioni", description: error.message, variant: 'destructive' });
@@ -66,6 +80,22 @@ const AutomationSettings = () => {
             toast({ title: "Impostazioni Salvate!", description: `Lo scraping automatico partirà alle ${startHour}:00 e verrà eseguito ${runsPerDay} volte al giorno.` });
         }
         setIsSaving(false);
+    };
+
+    const handleSendTestEmail = async () => {
+        try {
+            setIsTestingEmail(true);
+            const { error } = await supabase.functions.invoke('send_test_email', { body: {} });
+            if (error) {
+                toast({ title: 'Test email fallito', description: error.message, variant: 'destructive' });
+            } else {
+                toast({ title: 'Email di test inviata', description: `Controlla la casella: ${user?.email || ''}` });
+            }
+        } catch (e) {
+            toast({ title: 'Test email fallito', description: String(e?.message || e), variant: 'destructive' });
+        } finally {
+            setIsTestingEmail(false);
+        }
     };
     
     if (isLoading) {
@@ -112,6 +142,79 @@ const AutomationSettings = () => {
                             ))}
                         </SelectContent>
                     </Select>
+                </div>
+
+                <div>
+                    <Label className="flex items-center gap-2 mb-2 text-base text-muted-foreground">
+                        Conferme via Email
+                    </Label>
+                    <p className="text-sm text-muted-foreground mb-4">
+                        Le email vengono inviate a: <span className="font-semibold text-foreground">{user?.email || '—'}</span>
+                    </p>
+
+                    <div className="flex justify-end mb-4">
+                        <Button onClick={handleSendTestEmail} disabled={isTestingEmail} variant="secondary">
+                            {isTestingEmail ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                            Invia Email di Test
+                        </Button>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="min-w-0">
+                                <p className="text-sm font-medium text-foreground">Stock (Out of stock)</p>
+                                <p className="text-xs text-muted-foreground">Invia una email quando un ASIN va fuori stock.</p>
+                            </div>
+                            <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border border-input bg-background"
+                                checked={stockAlertEnabled}
+                                onChange={(e) => setStockAlertEnabled(e.target.checked)}
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="min-w-0">
+                                <p className="text-sm font-medium text-foreground">Stock (Qualsiasi cambio)</p>
+                                <p className="text-xs text-muted-foreground">Invia una email per ogni cambio di disponibilità.</p>
+                            </div>
+                            <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border border-input bg-background"
+                                checked={stockAlertOnChange}
+                                onChange={(e) => setStockAlertOnChange(e.target.checked)}
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="min-w-0">
+                                <p className="text-sm font-medium text-foreground">BSR variazione %</p>
+                                <p className="text-xs text-muted-foreground">Invia una email quando il BSR cambia oltre una soglia.</p>
+                            </div>
+                            <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border border-input bg-background"
+                                checked={bsrAlertEnabled}
+                                onChange={(e) => setBsrAlertEnabled(e.target.checked)}
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px] items-center gap-3">
+                            <div className="min-w-0">
+                                <p className="text-sm font-medium text-foreground">Soglia BSR (%)</p>
+                                <p className="text-xs text-muted-foreground">Esempio: 20 = email se il BSR cambia di ±20% o più.</p>
+                            </div>
+                            <Input
+                                type="number"
+                                inputMode="decimal"
+                                min={1}
+                                step={1}
+                                value={bsrAlertThresholdPct}
+                                onChange={(e) => setBsrAlertThresholdPct(e.target.value)}
+                                className="glass-input"
+                            />
+                        </div>
+                    </div>
                 </div>
                 
                 <div className="flex justify-end">

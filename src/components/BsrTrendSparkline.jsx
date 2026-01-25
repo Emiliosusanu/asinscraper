@@ -66,12 +66,12 @@ const BsrTrendSparkline = ({ values, overall, title = null, width = 42, height =
         fill="none"
         points={polyPoints}
         className={strokeClass}
-        strokeWidth="2.8"
+        strokeWidth="1.4"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <line x1={last.x} y1={last.y} x2={a1x} y2={a1y} className={strokeClass} strokeWidth="2.8" strokeLinecap="round" />
-      <line x1={last.x} y1={last.y} x2={a2x} y2={a2y} className={strokeClass} strokeWidth="2.8" strokeLinecap="round" />
+      <line x1={last.x} y1={last.y} x2={a1x} y2={a1y} className={strokeClass} strokeWidth="1.4" strokeLinecap="round" />
+      <line x1={last.x} y1={last.y} x2={a2x} y2={a2y} className={strokeClass} strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 };

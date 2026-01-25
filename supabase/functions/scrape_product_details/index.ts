@@ -174,8 +174,17 @@ function detectAvailability(html: string): { code: string | null; text: string |
   if (lowStockMatch) {
     return { code: 'LOW_STOCK', text: lowStockMatch[0] };
   }
-  if (/(available to ship|usually ships|ships within|spedizione|disponibile tra|verfügbar in|expédition sous|disponible en)/i.test(plain)) {
-    return { code: 'AVAILABLE_SOON', text: (plain.match(/(available to ship[^.]*|usually ships[^.]*|ships within[^.]*|spedizione[^.]*|disponibile tra[^.]*|verfügbar[^.]*|expédition sous[^.]*|disponible en[^.]*)/i)?.[0] || null) };
+  const otherSellersMatch = plain.match(
+    /(available\s*from\s*(?:these|other)?\s*sellers|other\s*sellers|altri\s*venditori|disponibile\s*da\s*venditori)/i,
+  );
+  if (otherSellersMatch) {
+    return { code: 'OTHER_SELLERS', text: otherSellersMatch[0] };
+  }
+  const shipDelayMatch = plain.match(
+    /(available\s*to\s*ship[^.]*|usually\s*ships[^.]*|ships\s*within[^.]*|available\s*to\s*ship\s*in[^.]*|spedizione[^.]*|disponibile\s*tra[^.]*|verfügbar[^.]*|expédition\s*sous[^.]*|disponible\s*en[^.]*)/i,
+  );
+  if (shipDelayMatch) {
+    return { code: 'SHIP_DELAY', text: shipDelayMatch[0] };
   }
   if (/(temporarily out of stock|temporalmente esaurito|derzeit nicht auf lager|temporairement en rupture|temporalmente sin stock)/i.test(plain)) {
     return { code: 'OUT_OF_STOCK', text: (plain.match(/(temporarily out of stock|temporalmente esaurito|derzeit nicht auf lager|temporairement en rupture|temporalmente sin stock)/i)?.[0] || null) };
@@ -196,8 +205,27 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+declare const Deno: any;
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+function readMailgunEnv() {
+  const apiKey = Deno.env.get("MAILGUN_API_KEY") ?? "";
+  const domain = Deno.env.get("MAILGUN_DOMAIN") ?? "";
+  const from = Deno.env.get("MAILGUN_FROM") ?? "";
+  const apiBase = Deno.env.get("MAILGUN_API_BASE") ?? "";
+  return { apiKey, domain, from, apiBase };
+}
+
+function getMissingMailgunEnv(): string[] {
+  const { apiKey, domain, from } = readMailgunEnv();
+  const missing: string[] = [];
+  if (!apiKey) missing.push("MAILGUN_API_KEY");
+  if (!domain) missing.push("MAILGUN_DOMAIN");
+  if (!from) missing.push("MAILGUN_FROM");
+  return missing;
+}
 const BESTSELLER_MISSES_REQUIRED = 3; // consecutive runs without top-1 before demotion
 
 // CORS headers for browser requests
@@ -206,6 +234,91 @@ const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
+
+async function getAccountEmail(client: any, userId: string): Promise<string | null> {
+  try {
+    const { data, error } = await client.auth.admin.getUserById(userId);
+    if (error) return null;
+    const email = (data as any)?.user?.email;
+    return email ? String(email) : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
+async function sendMailgunEmail(toEmail: string, subject: string, text: string): Promise<{ ok: boolean; error?: string }> {
+  const missing = getMissingMailgunEnv();
+  if (missing.length) return { ok: false, error: `Missing Mailgun env: ${missing.join(", ")}` };
+  try {
+    const { apiKey, domain, from, apiBase } = readMailgunEnv();
+    const base = (apiBase || "https://api.mailgun.net").replace(/\/+$/, "");
+    const url = `${base}/v3/${domain}/messages`;
+    const body = new URLSearchParams();
+    body.set('from', from);
+    body.set('to', toEmail);
+    body.set('subject', subject);
+    body.set('text', text);
+    const auth = btoa(`api:${apiKey}`);
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body,
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      return { ok: false, error: `Mailgun error ${r.status}: ${t}` };
+    }
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || String(e) };
+  }
+}
+
+async function sendDedupedEmailAlert(
+  client: any,
+  userId: string,
+  asin: string,
+  alertType: string,
+  dedupeKey: string,
+  toEmail: string | null,
+  subject: string,
+  text: string,
+): Promise<void> {
+  if (!toEmail) return;
+  const { error: insErr } = await client.from('email_alert_log').insert({
+    user_id: userId,
+    asin,
+    alert_type: alertType,
+    dedupe_key: dedupeKey,
+  });
+  if (insErr) {
+    const cd = String((insErr as any)?.code || '');
+    const msg = String((insErr as any)?.message || '');
+    if (cd === '23505' || /duplicate key value/i.test(msg)) return;
+    console.error('email_alert_log insert error', insErr);
+    return;
+  }
+  const sent = await sendMailgunEmail(toEmail, subject, text);
+  if (!sent.ok) {
+    try {
+      await client.from('email_alert_log').delete().eq('user_id', userId).eq('dedupe_key', dedupeKey);
+    } catch (_e) {}
+    console.error('Mailgun send failed', sent.error);
+  }
+}
+
+function normalizeAvailabilityForChange(code: string | null): string | null {
+  const c = String(code || '').toUpperCase();
+  if (c === 'LOW_STOCK') return 'IN_STOCK';
+  if (c === 'SHIP_DELAY') return 'IN_STOCK';
+  if (c === 'OTHER_SELLERS') return 'IN_STOCK';
+  if (c === 'AVAILABLE_SOON') return 'IN_STOCK';
+  if (c === 'PREORDER') return 'IN_STOCK';
+  return c ? c : null;
+}
 
 const countryToDomain: Record<string, string> = {
   "com": "amazon.com",
@@ -476,6 +589,20 @@ serve(async (req: Request) => {
 
     const client = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
+    let alertSettings: any = null;
+    try {
+      const { data } = await client
+        .from('settings')
+        .select('stock_alert_enabled, stock_alert_on_change')
+        .eq('user_id', userId)
+        .maybeSingle();
+      alertSettings = data || null;
+    } catch (_e) {}
+    const stockAlertEnabled = !!alertSettings?.stock_alert_enabled;
+    const stockAlertOnChange = !!alertSettings?.stock_alert_on_change;
+    const wantsAnyEmailAlert = stockAlertEnabled || stockAlertOnChange;
+    const accountEmail = wantsAnyEmailAlert ? await getAccountEmail(client, userId) : null;
+
     // Build product URL
     const dom = countryToDomain[country] || countryToDomain["com"];
     const url = `https://${dom}/dp/${asin}`;
@@ -486,7 +613,7 @@ serve(async (req: Request) => {
     // Parse title and price if available in asin_data
     const { data: asinRow } = await client
       .from("asin_data")
-      .select("id, price, title, is_bestseller, is_bestseller_miss_count")
+      .select("id, price, title, is_bestseller, is_bestseller_miss_count, availability_code, stock_status")
       .eq("asin", asin)
       .eq("user_id", userId)
       .maybeSingle();
@@ -556,6 +683,8 @@ serve(async (req: Request) => {
 
     // Availability detection
     const avail = detectAvailability(html);
+    const prevCode = asinRow?.availability_code ? String(asinRow.availability_code) : null;
+    const newCode = avail.code ? String(avail.code) : null;
 
     // Update asin_data for this user's ASIN
     if (asinRow?.id) {
@@ -626,6 +755,58 @@ serve(async (req: Request) => {
             interior_detected: true,
           })
           .eq("id", asinRow.id);
+      }
+
+      if (wantsAnyEmailAlert && accountEmail && prevCode && newCode && prevCode !== newCode) {
+        try {
+          const dayKey = new Date().toISOString().slice(0, 10);
+          const prevEff = normalizeAvailabilityForChange(prevCode);
+          const newEff = normalizeAvailabilityForChange(newCode);
+
+          const inStockCodes = new Set([
+            'IN_STOCK',
+            'LOW_STOCK',
+            'SHIP_DELAY',
+            'AVAILABLE_SOON',
+            'OTHER_SELLERS',
+            'POD',
+            'PREORDER',
+            'MADE_TO_ORDER',
+          ]);
+          const outOfStockCodes = new Set(['OOS', 'OUT_OF_STOCK', 'UNAVAILABLE']);
+
+          if (stockAlertOnChange && prevEff && newEff && prevEff !== newEff) {
+            const dedupeKey = `stock_change:${asin}:${prevEff}->${newEff}:${dayKey}`;
+            const subject = `[KDPInsights] Stock changed (${asin})`;
+            const body = [
+              `ASIN: ${asin}`,
+              `Title: ${title || ''}`,
+              `Previous: ${prevCode}`,
+              `Now: ${newCode}`,
+              `Time (UTC): ${new Date().toISOString()}`,
+            ].filter(Boolean).join('\n');
+            await sendDedupedEmailAlert(client, userId, asin, 'stock_change', dedupeKey, accountEmail, subject, body);
+          }
+
+          if (
+            stockAlertEnabled &&
+            inStockCodes.has(String(prevCode).toUpperCase()) &&
+            outOfStockCodes.has(String(newCode).toUpperCase())
+          ) {
+            const dedupeKey = `stock_oos:${asin}:${String(newCode).toUpperCase()}:${dayKey}`;
+            const subject = `[KDPInsights] Out of stock (${asin})`;
+            const body = [
+              `ASIN: ${asin}`,
+              `Title: ${title || ''}`,
+              `Previous: ${prevCode}`,
+              `Now: ${newCode}`,
+              `Time (UTC): ${new Date().toISOString()}`,
+            ].filter(Boolean).join('\n');
+            await sendDedupedEmailAlert(client, userId, asin, 'stock_oos', dedupeKey, accountEmail, subject, body);
+          }
+        } catch (e: any) {
+          console.error('Email alert send error', e?.message || e);
+        }
       }
     }
 

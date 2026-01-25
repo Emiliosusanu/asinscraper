@@ -51,6 +51,9 @@ const AsinCard = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart, onE
   const effectiveRoyalty = (data.royalty && data.royalty > 0) ? data.royalty : estimateRoyalty(data);
   const income = calculateIncome(sales, effectiveRoyalty);
 
+  const qiScore = trend?.qi?.score;
+  const hasQiScore = typeof qiScore === 'number' && Number.isFinite(qiScore);
+
   const formatIncomeRange = (range) => {
     if (range[0] === range[1]) {
       return `$${range[0].toFixed(2)}`;
@@ -194,13 +197,33 @@ React.useEffect(() => {
       <div className="flex gap-4 mb-4">
         <a href={amazonLink} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 relative group/cover">
           {data.is_bestseller && (
-            <div className="absolute -left-2 -top-2 z-10">
-              <BestsellerBadge small />
+            <div className="absolute left-2 top-2 z-10 flex flex-col gap-1 items-start">
+              <div className="sm:hidden">
+                <BestsellerBadge micro />
+              </div>
+              <div className="hidden sm:block">
+                <BestsellerBadge small />
+              </div>
+              {data.is_great_on_kindle && (
+                <>
+                  <div className="sm:hidden">
+                    <GreatOnKindleBadge micro />
+                  </div>
+                  <div className="hidden sm:block">
+                    <GreatOnKindleBadge small />
+                  </div>
+                </>
+              )}
             </div>
           )}
-          {data.is_great_on_kindle && (
-            <div className="absolute -right-2 -top-2 z-10">
-              <GreatOnKindleBadge small />
+          {!data.is_bestseller && data.is_great_on_kindle && (
+            <div className="absolute left-2 top-2 z-10">
+              <div className="sm:hidden">
+                <GreatOnKindleBadge micro />
+              </div>
+              <div className="hidden sm:block">
+                <GreatOnKindleBadge small />
+              </div>
             </div>
           )}
           <div className="relative w-24 h-36 overflow-hidden rounded-md ring-1 ring-white/10 transition-colors duration-200 md:group-hover/cover:ring-white/40">
@@ -237,17 +260,12 @@ React.useEffect(() => {
               <div className="relative w-full">
                 <p className="text-sm text-muted-foreground mb-1">{data.author || 'Autore non disponibile'}</p>
                 <p className="text-xs text-muted-foreground/70 font-mono tracking-wide">{data.asin}</p>
-                {trend?.bsr4d?.values?.length >= 2 && (
-                  <div className="absolute right-0 top-1/2 -translate-y-1/2 opacity-90">
-                    <BsrTrendSparkline values={trend?.bsr4d?.values} overall={trend?.bsr4d?.overall} width={38} height={14} />
-                  </div>
-                )}
               </div>
             </div>
           </div>
           <div className={`flex items-center gap-1.5 text-xs mt-1 ${availabilityClass}`}>
             <AvailabilityIcon className="w-3.5 h-3.5" />
-            <span className="font-semibold">{data.stock_status || 'Sconosciuto'}</span>
+            <span className="font-semibold text-sm">{data.stock_status || 'Sconosciuto'}</span>
           </div>
           {/* Snapshot chips (QI/Mo/Vol) intentionally hidden */}
           </div>
@@ -279,7 +297,7 @@ React.useEffect(() => {
         </div>
         <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg col-span-2">
           <Star className="w-4 h-4 text-yellow-400" />
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:gap-4 w-full">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 sm:gap-4 w-full">
             <div className="flex items-center gap-1.5 min-w-0 whitespace-nowrap">
               <span className="font-semibold text-foreground text-sm sm:text-base leading-tight min-w-0 whitespace-nowrap">
                 {data.rating ? (
@@ -298,6 +316,20 @@ React.useEffect(() => {
                 </span>
               )}
             </div>
+
+            {trend?.bsr4d?.values?.length >= 2 ? (
+              <div className="flex items-center justify-center">
+                <div className="opacity-90 sm:hidden">
+                  <BsrTrendSparkline values={trend?.bsr4d?.values} overall={trend?.bsr4d?.overall} width={54} height={12} />
+                </div>
+                <div className="opacity-90 hidden sm:block">
+                  <BsrTrendSparkline values={trend?.bsr4d?.values} overall={trend?.bsr4d?.overall} width={46} height={12} />
+                </div>
+              </div>
+            ) : (
+              <div className="hidden sm:block" />
+            )}
+
             <div
               className="flex items-center gap-1.5 justify-end flex-shrink-0 cursor-pointer hover:opacity-90 focus:outline-none focus:ring-1 focus:ring-border/50 rounded-md px-1 py-0.5"
               role="button"
@@ -323,12 +355,21 @@ React.useEffect(() => {
           </div>
         </div>
         
-        {data.page_count > 0 && (
+        {(data.page_count > 0 || Number.isFinite(Number(topBook?.pages))) && (
             <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
                 <BookOpen className="w-4 h-4 text-blue-400" />
                 <div>
                     <p className="text-muted-foreground">Pagine</p>
-                    <p className="font-semibold text-foreground">{data.page_count}</p>
+                    <p
+                      className="font-semibold text-foreground"
+                      title={(Number.isFinite(Number(topBook?.pages)) && data.page_count > 0) ? `Questo mese / Scraped: ${Number(topBook.pages)} / ${data.page_count}` : undefined}
+                    >
+                      {Number.isFinite(Number(topBook?.pages)) && data.page_count > 0
+                        ? `${Number(topBook.pages)} / ${data.page_count}`
+                        : (Number.isFinite(Number(topBook?.pages))
+                            ? `${Number(topBook.pages)}`
+                            : `${data.page_count}`)}
+                    </p>
                 </div>
             </div>
         )}
@@ -371,21 +412,35 @@ React.useEffect(() => {
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Clock className="w-3 h-3"/>
           <span>{formatTimeAgo(data.updated_at) || 'Mai'}</span>
+          {hasQiScore && (
+            <span
+              className={`sm:hidden inline-flex items-center justify-center h-5 px-2 rounded-full border text-[10px] font-semibold tabular-nums ${
+                qiScore >= 70
+                  ? 'text-emerald-200 bg-emerald-500/10 border-emerald-500/20'
+                  : qiScore >= 45
+                    ? 'text-yellow-200 bg-yellow-500/10 border-yellow-500/20'
+                    : 'text-red-200 bg-red-500/10 border-red-500/20'
+              }`}
+              title={`QI ${Math.round(qiScore)}/100`}
+            >
+              QI {Math.round(qiScore)}
+            </span>
+          )}
         </div>
         <div className="relative flex items-center justify-end">
-          {Number.isFinite(Number(trend?.qi?.score)) && (
-            <div className="absolute inset-y-0 right-0 flex items-center pointer-events-none opacity-100 group-hover:opacity-0 transition-opacity duration-200">
+          {hasQiScore && (
+            <div className="hidden sm:flex absolute inset-y-0 right-0 items-center pointer-events-none opacity-100 sm:group-hover:opacity-0 transition-opacity duration-200">
               <span
                 className={`inline-flex items-center justify-center h-6 px-2.5 rounded-full border text-[11px] font-semibold tabular-nums ${
-                  Number(trend.qi.score) >= 70
+                  qiScore >= 70
                     ? 'text-emerald-200 bg-emerald-500/10 border-emerald-500/20'
-                    : Number(trend.qi.score) >= 45
+                    : qiScore >= 45
                       ? 'text-yellow-200 bg-yellow-500/10 border-yellow-500/20'
                       : 'text-red-200 bg-red-500/10 border-red-500/20'
                 }`}
-                title={`QI ${Math.round(Number(trend.qi.score))}/100`}
+                title={`QI ${Math.round(qiScore)}/100`}
               >
-                QI {Math.round(Number(trend.qi.score))}
+                QI {Math.round(qiScore)}
               </span>
             </div>
           )}
