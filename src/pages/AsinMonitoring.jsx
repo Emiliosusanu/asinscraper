@@ -692,7 +692,7 @@ const handleRefreshAll = async () => {
         <div className="w-full pb-24 lg:pb-8">
 
         <div className="grid grid-cols-[1fr_auto] items-center gap-3 mb-6">
-          <div className="relative min-w-0">
+          <div className="relative min-w-0 pr-2 sm:pr-0 overflow-x-hidden overflow-y-visible">
             <div className="sm:hidden flex items-center gap-2 min-w-0">
               {(() => {
                 const gained = Number(poolReviews7d.gained) || 0;
@@ -703,7 +703,7 @@ const handleRefreshAll = async () => {
                   <div className="flex items-center gap-2 min-w-0">
                     {qi != null && (
                       <div
-                        className="shrink-0 h-10 px-3 rounded-full border border-white/10 bg-white/[0.04] shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset] flex items-center gap-2"
+                        className="shrink-0 h-10 px-3 rounded-full border border-white/10 bg-white/[0.04] shadow-[0_10px_26px_rgba(0,0,0,0.25),0_0_0_1px_rgba(255,255,255,0.04)_inset] flex items-center gap-2"
                         title="QI"
                       >
                         <BrandFish size={16} className="-ml-0.5" />
@@ -713,19 +713,19 @@ const handleRefreshAll = async () => {
                     )}
 
                     <div
-                      className="shrink-0 h-12 min-w-[56px] px-4 rounded-full border border-white/10 bg-gradient-to-b from-white/[0.08] to-white/[0.03] shadow-[0_18px_36px_rgba(0,0,0,0.35)_inset,0_0_0_1px_rgba(255,255,255,0.04)_inset] flex items-center justify-center"
+                      className="shrink-0 h-12 min-w-[56px] px-4 rounded-full border border-white/10 bg-gradient-to-b from-white/[0.08] to-white/[0.03] shadow-[0_10px_26px_rgba(0,0,0,0.25),0_18px_36px_rgba(0,0,0,0.35)_inset,0_0_0_1px_rgba(255,255,255,0.04)_inset] flex items-center justify-center"
                       title="Libri"
                     >
                       <span className="text-3xl font-semibold tabular-nums text-foreground">{filteredAndSortedAsins.length}</span>
                     </div>
 
                     <div
-                      className="min-w-0 flex items-center gap-2 h-10 px-3 rounded-full border border-white/10 bg-white/[0.04] shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset]"
+                      className="flex-1 min-w-0 overflow-hidden flex items-center gap-1 h-10 px-2 rounded-full border border-white/10 bg-white/[0.04] shadow-[0_10px_26px_rgba(0,0,0,0.25),0_0_0_1px_rgba(255,255,255,0.04)_inset]"
                       title="Recensioni ultimi 7 giorni"
                     >
-                      <span className="text-xs font-semibold tracking-wide text-muted-foreground/80">7G</span>
-                      <span className={`shrink-0 inline-flex items-center justify-center h-7 px-3 rounded-full border text-xs font-semibold tabular-nums ${gained > 0 ? 'text-emerald-200 bg-emerald-500/15 border-emerald-500/25 shadow-[0_0_18px_rgba(16,185,129,0.18)]' : 'text-slate-200 bg-black/20 border-white/10'}`}>{gained > 0 ? `+${fmt(gained)}` : '0'}</span>
-                      <span className={`shrink-0 inline-flex items-center justify-center h-7 px-3 rounded-full border text-xs font-semibold tabular-nums ${lost > 0 ? 'text-red-200 bg-red-500/15 border-red-500/25 shadow-[0_0_18px_rgba(239,68,68,0.16)]' : 'text-slate-200 bg-black/20 border-white/10'}`}>{lost > 0 ? `-${fmt(lost)}` : '0'}</span>
+                      <span className="shrink-0 text-xs font-semibold tracking-wide text-muted-foreground/80">7G</span>
+                      <span className={`min-w-0 flex-1 truncate inline-flex items-center justify-center h-7 px-2 rounded-full border text-xs font-semibold tabular-nums ${gained > 0 ? 'text-emerald-200 bg-emerald-500/15 border-emerald-500/25 shadow-[0_0_18px_rgba(16,185,129,0.18)]' : 'text-slate-200 bg-black/20 border-white/10'}`}>{gained > 0 ? `+${fmt(gained)}` : '0'}</span>
+                      <span className={`min-w-0 flex-1 truncate inline-flex items-center justify-center h-7 px-2 rounded-full border text-xs font-semibold tabular-nums ${lost > 0 ? 'text-red-200 bg-red-500/15 border-red-500/25 shadow-[0_0_18px_rgba(239,68,68,0.16)]' : 'text-slate-200 bg-black/20 border-white/10'}`}>{lost > 0 ? `-${fmt(lost)}` : '0'}</span>
                     </div>
                   </div>
                 );
