@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { Loader2, X, Star, MessageCircle } from 'lucide-react';
+import { X, Star, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/use-toast';
+import BrandPreloader from '@/components/BrandPreloader';
 
 const StarRating = ({ rating }) => (
   <div className="flex items-center">
@@ -178,7 +179,7 @@ const AsinReviewsModal = ({ asinData, onClose }) => {
           <div className="flex-grow p-6 overflow-y-auto">
             {loading ? (
               <div className="flex items-center justify-center h-full">
-                <Loader2 className="w-12 h-12 text-white animate-spin" />
+                <BrandPreloader size={84} />
               </div>
             ) : reviews.length > 0 ? (
               <div className="space-y-6">

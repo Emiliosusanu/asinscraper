@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/use-toast';
-import { Loader2 } from 'lucide-react';
+import BrandPreloader from '@/components/BrandPreloader';
 
 // Emilio: This is the new Market Analysis page.
 
@@ -154,7 +154,7 @@ const AnalysisCard = ({ icon: Icon, title, value, change, description, color, is
     </CardHeader>
     <CardContent>
       {isLoading ? (
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <BrandPreloader size={28} />
       ) : (
         <>
           <div className="text-2xl font-bold text-foreground">{value}</div>
@@ -455,7 +455,7 @@ const MarketAnalysis = () => {
           <CardContent>
             {todLoading ? (
               <div className="flex items-center gap-3 text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                <BrandPreloader size={22} />
                 <span>Analisi dello storico BSR...</span>
               </div>
             ) : todAnalysis.totalMoves === 0 ? (
@@ -556,7 +556,7 @@ const MarketAnalysis = () => {
                 <h2 className="text-2xl font-bold text-foreground mb-4">Top Performers</h2>
                 <div className="space-y-4">
                     {isLoading ? (
-                        <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mt-8" />
+                        <div className="flex justify-center mt-8"><BrandPreloader size={64} /></div>
                     ) : analysisData.topPerformers.length > 0 ? (
                         analysisData.topPerformers.map(book => <BookPerformanceCard key={book.id} book={book} type="top" />)
                     ) : (
@@ -568,7 +568,7 @@ const MarketAnalysis = () => {
                 <h2 className="text-2xl font-bold text-foreground mb-4">Da Monitorare</h2>
                  <div className="space-y-4">
                     {isLoading ? (
-                        <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mt-8" />
+                        <div className="flex justify-center mt-8"><BrandPreloader size={64} /></div>
                     ) : analysisData.worstPerformers.length > 0 ? (
                         analysisData.worstPerformers.map(book => <BookPerformanceCard key={book.id} book={book} type="worst" />)
                     ) : (

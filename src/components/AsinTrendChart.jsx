@@ -2,13 +2,14 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ReferenceLine, ReferenceDot, Brush, ReferenceArea } from 'recharts';
 import { supabase } from '@/lib/customSupabaseClient';
-import { Loader2, X, Wand2, AlertTriangle, Info } from 'lucide-react';
+import { X, Wand2, AlertTriangle, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import DateRangePicker from '@/components/DateRangePicker';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { addDays, format } from 'date-fns';
 import useLocalStorage from '@/hooks/useLocalStorage';
 import BestsellerBadge from '@/components/BestsellerBadge';
+import BrandPreloader from '@/components/BrandPreloader';
 
 // Custom tooltip with currency-aware formatting and compact layout
 const CustomTooltip = ({ active, payload, label, currency }) => {
@@ -933,7 +934,7 @@ const AsinTrendChart = ({ asinData, onClose }) => {
           <div className="flex-grow">
             {loading ? (
               <div className="flex items-center justify-center h-full">
-                <Loader2 className="w-12 h-12 text-white animate-spin" />
+                <BrandPreloader size={84} />
               </div>
             ) : dataForChart.length > 1 ? (
               <div

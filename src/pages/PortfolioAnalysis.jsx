@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { BrainCircuit, Book, TrendingUp, TrendingDown, Star, DollarSign, Loader2, ArrowUp, ArrowDown } from 'lucide-react';
+import { BrainCircuit, Book, TrendingUp, TrendingDown, Star, DollarSign, ArrowUp, ArrowDown } from 'lucide-react';
 import usePortfolioAnalysis from '@/hooks/usePortfolioAnalysis';
 import { Button } from '@/components/ui/button';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import TrendIndicator from '@/components/TrendIndicator';
+import BrandPreloader from '@/components/BrandPreloader';
 
 // Emilio: This component is for Portfolio Analysis.
 const StatCard = ({ icon: Icon, label, value, trend, color, formatFn }) => (
@@ -94,7 +95,7 @@ const PortfolioAnalysis = () => {
   if (isLoading && !stats.totalBooks && history.length === 0) {
     return (
       <div className="flex justify-center items-center h-[80vh]">
-        <Loader2 className="w-16 h-16 text-primary animate-spin" />
+        <BrandPreloader size={84} />
       </div>
     );
   }
@@ -139,7 +140,7 @@ const PortfolioAnalysis = () => {
 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-card p-6 mb-8 h-[50vh]">
             <h3 className="text-xl font-semibold mb-4">Andamento Portfolio</h3>
-            {isLoading && history.length === 0 ? <div className="flex justify-center items-center h-full"><Loader2 className="w-8 h-8 text-primary animate-spin" /></div> :
+            {isLoading && history.length === 0 ? <div className="flex justify-center items-center h-full"><BrandPreloader size={64} /></div> :
              history.length > 1 ? (
               <ResponsiveContainer width="100%" height="100%">
                  <AreaChart data={history} margin={{ top: 10, right: 30, left: 20, bottom: 20 }}>

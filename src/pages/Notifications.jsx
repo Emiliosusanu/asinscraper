@@ -1,8 +1,9 @@
 import React from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { Loader2, Check, Bell, Info, AlertTriangle } from 'lucide-react';
+import { Check, Bell, Info, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import BrandPreloader from '@/components/BrandPreloader';
 
 function fmtDate(ts) {
   try {
@@ -68,11 +69,11 @@ export default function Notifications() {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-semibold text-foreground flex items-center gap-2"><Bell className="w-5 h-5" /> Notifiche</h2>
         <Button size="sm" variant="outline" onClick={markAllRead} disabled={updating} className="border-border text-muted-foreground hover:bg-muted hover:text-foreground">
-          {updating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Segna tutte come lette
+          {updating ? <BrandPreloader size={18} className="mr-2" /> : <Check className="w-4 h-4" />} Segna tutte come lette
         </Button>
       </div>
       {loading ? (
-        <div className="flex items-center justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+        <div className="flex items-center justify-center py-16"><BrandPreloader size={64} /></div>
       ) : rows?.length ? (
         <div className="space-y-3">
           {rows.map((r) => (

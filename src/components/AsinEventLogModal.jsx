@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
-import { Loader2, X, History, ShoppingCart, Star, BarChart, AlertTriangle, PlusCircle, TrendingDown, TrendingUp } from 'lucide-react';
+import { X, History, ShoppingCart, Star, BarChart, AlertTriangle, PlusCircle, TrendingDown, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import BrandPreloader from '@/components/BrandPreloader';
 
 const eventIcons = {
   ASIN_ADDED: <PlusCircle className="w-5 h-5 text-green-400" />,
@@ -94,7 +95,7 @@ const AsinEventLogModal = ({ asinData, isOpen, onClose }) => {
         </DialogHeader>
         <div className="max-h-[60vh] overflow-y-auto p-1 pr-4">
           {isLoading ? (
-            <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+            <div className="flex justify-center p-8"><BrandPreloader size={64} /></div>
           ) : events.length > 0 ? (
             <div className="relative pl-8">
               <div className="absolute left-[15px] top-0 h-full w-0.5 bg-border -translate-x-1/2"></div>

@@ -1,11 +1,12 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Star, TrendingUp, DollarSign, RefreshCcw, Trash2, Loader2, LineChart, Clock, PackageCheck, PackageX, Edit, MessageCircle, BarChart2, Calendar, History } from 'lucide-react';
+import { Star, TrendingUp, DollarSign, RefreshCcw, Trash2, LineChart, Clock, PackageCheck, PackageX, Edit, MessageCircle, BarChart2, Calendar, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TrendIndicator from '@/components/TrendIndicator';
 import BsrTrendSparkline from '@/components/BsrTrendSparkline';
 import BestsellerBadge from '@/components/BestsellerBadge';
 import GreatOnKindleBadge from '@/components/GreatOnKindleBadge';
+import BrandPreloader from '@/components/BrandPreloader';
 import { calculateSalesFromBsr, calculateIncome } from '@/lib/incomeCalculator';
 import { estimateRoyalty } from '@/lib/royaltyEstimator';
 
@@ -136,6 +137,9 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
     >
       <style>{`
         @keyframes rowPulse { 0%, 100% { opacity: 0.16; } 50% { opacity: 0.5; } }
+        @keyframes coverBorderSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes coverSparkle { 0% { background-position: 0% 0%, 100% 20%, 40% 100%, 0% 100%; opacity: 0.22; } 50% { background-position: 100% 0%, 0% 80%, 70% 0%, 100% 100%; opacity: 0.44; } 100% { background-position: 0% 0%, 100% 20%, 40% 100%, 0% 100%; opacity: 0.22; } }
+        @media (prefers-reduced-motion: reduce) { .cover-anim { animation: none !important; } }
       `}</style>
       {isRefreshing && (
         <div
@@ -159,7 +163,7 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
       <a href={amazonLink} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 relative group/cover">
         <div className="relative w-12 h-16 sm:w-16 sm:h-24 rounded-md overflow-hidden ring-1 ring-white/10 transition-colors duration-200 md:group-hover/cover:ring-white/40">
           {(data.is_bestseller || data.is_great_on_kindle) && (
-            <div className="absolute left-1 top-1 z-10 flex flex-col gap-1 items-start">
+            <div className="absolute left-0.5 top-0.5 sm:left-1 sm:top-1 z-10 flex flex-col gap-0.5 items-start">
               {data.is_bestseller && (
                 <>
                   <div className="sm:hidden">
@@ -182,6 +186,27 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
               )}
             </div>
           )}
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+            <div
+              className="cover-anim absolute inset-0 rounded-md"
+              style={{
+                background: 'conic-gradient(from 180deg, rgba(255,255,255,0.0), rgba(255,255,255,0.18), rgba(255,255,255,0.0), rgba(56,189,248,0.14), rgba(255,255,255,0.0), rgba(251,146,60,0.14), rgba(255,255,255,0.0))',
+                WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px))',
+                mask: 'radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px))',
+                opacity: 0.5,
+                animation: 'coverBorderSpin 11s linear infinite'
+              }}
+            />
+            <div
+              className="cover-anim absolute inset-0 rounded-md mix-blend-screen"
+              style={{
+                backgroundImage: 'radial-gradient(circle at 10% 20%, rgba(255,255,255,0.55) 0px, rgba(255,255,255,0) 9px), radial-gradient(circle at 85% 15%, rgba(56,189,248,0.55) 0px, rgba(56,189,248,0) 10px), radial-gradient(circle at 70% 85%, rgba(251,146,60,0.55) 0px, rgba(251,146,60,0) 10px), radial-gradient(circle at 20% 80%, rgba(255,255,255,0.38) 0px, rgba(255,255,255,0) 12px)',
+                backgroundSize: '120% 120%, 140% 140%, 140% 140%, 160% 160%',
+                opacity: 0.22,
+                animation: 'coverSparkle 2200ms ease-in-out infinite'
+              }}
+            />
+          </div>
           {/* elegant moving sheen */}
           <div aria-hidden="true" className="pointer-events-none absolute inset-0">
             <div className="absolute top-0 left-0 h-full w-2/3 -translate-x-[65%] md:group-hover/cover:translate-x-[180%] transition-transform duration-700 ease-in-out bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 blur-[0.5px]" />
@@ -254,7 +279,7 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
           {/* Mobile quick actions */}
           <div className="sm:hidden flex items-center gap-1.5 mt-1 -mr-2">
             <Button onClick={handleRefresh} size="icon" variant="ghost" className="w-8 h-8" disabled={isRefreshing} aria-label="Aggiorna">
-              {isRefreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
+              {isRefreshing ? <BrandPreloader size={18} /> : <RefreshCcw className="w-4 h-4" />}
             </Button>
             <Button onClick={handleShowChart} size="icon" variant="ghost" className="w-8 h-8" aria-label="Grafico">
               <LineChart className="w-4 h-4" />
@@ -309,7 +334,7 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
 
         <div className="hidden sm:flex col-span-12 sm:col-span-12 items-center justify-end gap-0 -mr-2">
             <Button onClick={handleRefresh} size="icon" variant="ghost" className="w-8 h-8 text-muted-foreground hover:text-foreground hover:bg-muted" disabled={isRefreshing}>
-              {isRefreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
+              {isRefreshing ? <BrandPreloader size={18} /> : <RefreshCcw className="w-4 h-4" />}
             </Button>
             <Button onClick={handleShowLogs} size="icon" variant="ghost" className="w-8 h-8 text-muted-foreground hover:text-foreground hover:bg-muted">
               <History className="w-4 h-4" />

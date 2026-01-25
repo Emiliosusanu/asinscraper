@@ -6,7 +6,7 @@ import AsinMonitoring from '@/pages/AsinMonitoring';
 import Settings from '@/pages/Settings';
 import Login from '@/pages/Login';
 import { Toaster } from '@/components/ui/toaster';
-import { Loader2 } from 'lucide-react';
+import BrandPreloader from '@/components/BrandPreloader';
 import PortfolioAnalysis from '@/pages/PortfolioAnalysis';
 import AnalysisTools from '@/pages/AnalysisTools';
 import MobileNav from '@/components/layout/MobileNav';
@@ -19,9 +19,7 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="w-16 h-16 text-primary animate-spin" />
-      </div>
+      <BrandPreloader fullscreen size={84} />
     );
   }
 

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Bot, Clock, Loader2 } from 'lucide-react';
+import { Bot, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import BrandPreloader from '@/components/BrandPreloader';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
@@ -99,7 +100,7 @@ const AutomationSettings = () => {
     };
     
     if (isLoading) {
-        return <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+        return <div className="flex justify-center p-8"><BrandPreloader size={64} /></div>;
     }
 
     return (
@@ -154,7 +155,7 @@ const AutomationSettings = () => {
 
                     <div className="flex justify-end mb-4">
                         <Button onClick={handleSendTestEmail} disabled={isTestingEmail} variant="secondary">
-                            {isTestingEmail ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                            {isTestingEmail ? <BrandPreloader size={18} className="mr-2" /> : null}
                             Invia Email di Test
                         </Button>
                     </div>
@@ -219,7 +220,7 @@ const AutomationSettings = () => {
                 
                 <div className="flex justify-end">
                     <Button onClick={handleSaveSettings} disabled={isSaving}>
-                        {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                        {isSaving ? <BrandPreloader size={18} className="mr-2" /> : null}
                         Salva Impostazioni
                     </Button>
                 </div>

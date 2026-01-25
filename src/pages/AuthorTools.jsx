@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { Wrench, Search, Loader2 } from 'lucide-react';
+import { Wrench, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import ScrapedBookCard from '@/components/ScrapedBookCard';
+import BrandPreloader from '@/components/BrandPreloader';
 
 const AuthorTools = () => {
   const [asin, setAsin] = useState('');
@@ -76,14 +77,14 @@ const AuthorTools = () => {
               className="flex-grow bg-white/10 border border-white/20 rounded-lg text-white px-4 py-3 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
             <Button onClick={handleScrape} disabled={isScraping} className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg">
-              {isScraping ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
+              {isScraping ? <BrandPreloader size={18} className="mr-2" /> : <Search className="w-4 h-4 mr-2" />}
               {isScraping ? 'Scraping...' : 'Scrape ASIN'}
             </Button>
           </div>
           
           {isScraping && (
             <div className="flex justify-center items-center py-10">
-              <Loader2 className="w-12 h-12 text-white animate-spin" />
+              <BrandPreloader size={84} />
             </div>
           )}
           

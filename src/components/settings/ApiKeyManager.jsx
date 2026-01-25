@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Key, Loader2, Plus, Trash2, RefreshCw, Edit, Save, History } from 'lucide-react';
+import { Key, Plus, Trash2, RefreshCw, Edit, Save, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import BrandPreloader from '@/components/BrandPreloader';
 import ApiKeyLogModal from '@/components/settings/ApiKeyLogModal';
 
 const ApiKeyManager = () => {
@@ -208,14 +209,14 @@ const ApiKeyManager = () => {
             <Input id="newApiKey" type="password" value={newApiKey} onChange={(e) => setNewApiKey(e.target.value)} placeholder="Incolla qui la tua nuova chiave..." className="w-full pl-12 pr-4 py-3 glass-input" />
           </div>
           <Button onClick={handleAddApiKey} className="bg-primary text-primary-foreground" disabled={isAdding}>
-            {isAdding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            {isAdding ? <BrandPreloader size={18} /> : <Plus className="w-4 h-4" />}
           </Button>
         </div>
       </div>
 
       <h3 className="text-lg font-semibold text-foreground mb-4">Le Tue Chiavi</h3>
       {isLoading ? (
-        <div className="flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+        <div className="flex justify-center"><BrandPreloader size={64} /></div>
       ) : (
         <ul className="space-y-3">
           {apiKeys.map(key => (

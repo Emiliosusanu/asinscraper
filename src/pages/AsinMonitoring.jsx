@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, RefreshCw, LayoutGrid, List, Loader2, BookOpen, Filter, Target, Archive } from 'lucide-react';
+import { Plus, RefreshCw, LayoutGrid, List, BookOpen, Filter, Target, Archive, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Helmet } from 'react-helmet';
+import BrandPreloader from '@/components/BrandPreloader';
+import BrandFish from '@/components/BrandFish';
 import AsinCard from '@/components/AsinCard';
 import AsinListItem from '@/components/AsinListItem';
 import AsinTrendChart from '@/components/AsinTrendChart';
@@ -112,7 +114,7 @@ const AsinForm = ({ isAdding, onAdd }) => {
             <option value="co.uk">.co.uk</option>
         </select>
         <Button type="submit" disabled={isAdding} className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20">
-          {isAdding ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+          {isAdding ? <BrandPreloader size={16} className="mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
           {isAdding ? 'Aggiungo...' : 'Aggiungi'}
         </Button>
       </form>
@@ -141,6 +143,17 @@ const AsinMonitoring = () => {
   const [inProgressAsins, setInProgressAsins] = useState(new Set());
   const lastScrollTsRef = useRef(0);
   const [showArchived, setShowArchived] = useLocalStorage('asinMonitoringShowArchived', false);
+
+  const displayName = useMemo(() => {
+    const meta = user?.user_metadata || {};
+    return (
+      meta.full_name ||
+      meta.name ||
+      (user?.email ? user.email.split('@')[0] : null) ||
+      ''
+    );
+  }, [user?.id, user?.email, user?.user_metadata]);
+
   const [topBooksMonth, setTopBooksMonth] = useState([]);
   const [refreshQueue, setRefreshQueue] = useLocalStorage('asinRefreshQueue', []);
   const queueRunningRef = useRef(false);
@@ -680,13 +693,55 @@ const handleRefreshAll = async () => {
 
         <div className="grid grid-cols-[1fr_auto] items-center gap-3 mb-6">
           <div className="relative min-w-0">
-            <div className="flex items-center gap-3 min-w-0 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            <div className="sm:hidden flex items-center gap-2 min-w-0">
+              {(() => {
+                const gained = Number(poolReviews7d.gained) || 0;
+                const lost = Number(poolReviews7d.lost) || 0;
+                const fmt = (n) => new Intl.NumberFormat('it-IT').format(Math.abs(n));
+                const qi = portfolioQi ? Math.round(portfolioQi.avg) : null;
+                return (
+                  <div className="flex items-center gap-2 min-w-0">
+                    {qi != null && (
+                      <div
+                        className="shrink-0 h-10 px-3 rounded-full border border-white/10 bg-white/[0.04] shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset] flex items-center gap-2"
+                        title="QI"
+                      >
+                        <BrandFish size={16} className="-ml-0.5" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/70 shadow-[0_0_14px_rgba(16,185,129,0.35)]" />
+                        <span className="text-sm font-semibold tabular-nums text-foreground">{qi}</span>
+                      </div>
+                    )}
+
+                    <div
+                      className="shrink-0 h-12 min-w-[56px] px-4 rounded-full border border-white/10 bg-gradient-to-b from-white/[0.08] to-white/[0.03] shadow-[0_18px_36px_rgba(0,0,0,0.35)_inset,0_0_0_1px_rgba(255,255,255,0.04)_inset] flex items-center justify-center"
+                      title="Libri"
+                    >
+                      <span className="text-3xl font-semibold tabular-nums text-foreground">{filteredAndSortedAsins.length}</span>
+                    </div>
+
+                    <div
+                      className="min-w-0 flex items-center gap-2 h-10 px-3 rounded-full border border-white/10 bg-white/[0.04] shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset]"
+                      title="Recensioni ultimi 7 giorni"
+                    >
+                      <span className="text-xs font-semibold tracking-wide text-muted-foreground/80">7G</span>
+                      <span className={`shrink-0 inline-flex items-center justify-center h-7 px-3 rounded-full border text-xs font-semibold tabular-nums ${gained > 0 ? 'text-emerald-200 bg-emerald-500/15 border-emerald-500/25 shadow-[0_0_18px_rgba(16,185,129,0.18)]' : 'text-slate-200 bg-black/20 border-white/10'}`}>{gained > 0 ? `+${fmt(gained)}` : '0'}</span>
+                      <span className={`shrink-0 inline-flex items-center justify-center h-7 px-3 rounded-full border text-xs font-semibold tabular-nums ${lost > 0 ? 'text-red-200 bg-red-500/15 border-red-500/25 shadow-[0_0_18px_rgba(239,68,68,0.16)]' : 'text-slate-200 bg-black/20 border-white/10'}`}>{lost > 0 ? `-${fmt(lost)}` : '0'}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="hidden sm:flex items-center gap-3 min-w-0 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {portfolioQi && (
               <div
                 className="shrink-0 flex items-center gap-2.5 px-3 py-1.5 rounded-full border border-white/10 bg-gradient-to-r from-white/[0.06] to-white/[0.03] shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset] hover:border-white/20 transition-colors"
                 title={`${Math.round(portfolioQi.avg)}/100 • ${portfolioQi.label} • ${portfolioQi.count} libri`}
               >
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80">QI</span>
+                <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground/80">
+                  <BrandFish size={14} className="opacity-90" />
+                  QI
+                </span>
                 <div className="relative w-24 h-1.5 rounded-full overflow-hidden bg-gradient-to-r from-red-500 via-yellow-500 to-emerald-500/70">
                   <div className="absolute inset-y-0 left-0 bg-white/70" style={{ width: `${Math.round(portfolioQi.avg)}%` }} />
                 </div>
@@ -702,10 +757,7 @@ const handleRefreshAll = async () => {
               className="shrink-0 flex items-center gap-2.5 px-3 py-1.5 rounded-full border border-white/10 bg-gradient-to-r from-white/[0.06] to-white/[0.03] shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset] hover:border-white/20 transition-colors"
               title="Recensioni ultimi 7 giorni"
             >
-              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
-                <span className="hidden sm:inline">Recensioni 7g</span>
-                <span className="sm:hidden inline">7g</span>
-              </span>
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80">Recensioni 7g</span>
               {(() => {
                 const gained = Number(poolReviews7d.gained) || 0;
                 const lost = Number(poolReviews7d.lost) || 0;
@@ -719,28 +771,35 @@ const handleRefreshAll = async () => {
               })()}
             </div>
             </div>
-            <div aria-hidden="true" className="pointer-events-none absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-background to-transparent" />
-            <div aria-hidden="true" className="pointer-events-none absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-background to-transparent" />
+
+            <div aria-hidden="true" className="hidden sm:block pointer-events-none absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-background to-transparent" />
+            <div aria-hidden="true" className="hidden sm:block pointer-events-none absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-background to-transparent" />
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {displayName && (
+              <div className="hidden md:flex items-center px-3 py-1.5 rounded-full border border-white/10 bg-gradient-to-r from-white/[0.06] to-white/[0.03] shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset] text-xs font-semibold text-foreground/90 max-w-[220px] truncate" title={displayName}>
+                {displayName}
+              </div>
+            )}
             <Button
               size="xs"
               onClick={() => setIsRefreshAllDialogOpen(true)}
               variant="outline"
-              className="border-border text-muted-foreground hover:bg-muted hover:text-foreground rounded-full px-3"
+              className="h-10 w-10 p-0 rounded-full border border-white/10 bg-white/[0.04] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground sm:h-auto sm:w-auto sm:bg-transparent sm:border-border sm:px-3"
               disabled={isRefreshingAll}
             >
-              {isRefreshingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              {isRefreshingAll ? <BrandPreloader size={18} /> : <RefreshCw className="w-4 h-4" />}
             </Button>
-            <Button size="xs" onClick={() => setShowArchived(v => !v)} variant={showArchived ? 'default' : 'ghost'} className={showArchived ? 'bg-primary text-primary-foreground rounded-full' : 'text-muted-foreground rounded-full'}>
-              <Archive className="w-4 h-4 sm:mr-1" />
+            <Button size="xs" onClick={() => setShowArchived(v => !v)} variant={showArchived ? 'default' : 'ghost'} className={showArchived ? 'h-10 w-10 p-0 rounded-full bg-white/[0.07] text-foreground border border-white/10 sm:h-auto sm:w-auto sm:p-0 sm:bg-primary sm:text-primary-foreground sm:border-0' : 'h-10 w-10 p-0 rounded-full border border-white/10 bg-white/[0.04] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground sm:h-auto sm:w-auto sm:p-0 sm:border-0 sm:bg-transparent sm:text-muted-foreground'}>
+              <Trash2 className="w-4 h-4 sm:hidden" />
+              <Archive className="w-4 h-4 hidden sm:block sm:mr-1" />
               <span className="hidden sm:inline">{showArchived ? 'Archiviati' : 'Attivi'}</span>
             </Button>
-            <div className="bg-muted/50 p-1 rounded-full border border-border">
-              <Button onClick={() => setViewMode('grid')} variant={viewMode === 'grid' ? 'default' : 'ghost'} size="xs" className={viewMode === 'grid' ? 'bg-primary text-primary-foreground rounded-full' : 'text-muted-foreground rounded-full'}>
+            <div className="bg-white/[0.04] p-1 rounded-full border border-white/10 sm:bg-muted/50 sm:border-border">
+              <Button onClick={() => setViewMode('grid')} variant={viewMode === 'grid' ? 'default' : 'ghost'} size="xs" className={viewMode === 'grid' ? 'bg-emerald-300 text-black rounded-full shadow-[0_0_22px_rgba(16,185,129,0.25)] sm:bg-primary sm:text-primary-foreground' : 'text-muted-foreground rounded-full'}>
                 <LayoutGrid className="w-4 h-4" />
               </Button>
-              <Button onClick={() => setViewMode('list')} variant={viewMode === 'list' ? 'default' : 'ghost'} size="xs" className={viewMode === 'list' ? 'bg-primary text-primary-foreground rounded-full' : 'text-muted-foreground rounded-full'}>
+              <Button onClick={() => setViewMode('list')} variant={viewMode === 'list' ? 'default' : 'ghost'} size="xs" className={viewMode === 'list' ? 'bg-emerald-300 text-black rounded-full shadow-[0_0_22px_rgba(16,185,129,0.25)] sm:bg-primary sm:text-primary-foreground' : 'text-muted-foreground rounded-full'}>
                 <List className="w-4 h-4" />
               </Button>
             </div>
@@ -752,7 +811,7 @@ const handleRefreshAll = async () => {
         )}
 
         {isLoading ? (
-          <div className="flex justify-center items-center py-16"><Loader2 className="w-16 h-16 text-primary animate-spin" /></div>
+          <div className="flex justify-center items-center py-16"><BrandPreloader size={84} /></div>
         ) : trackedAsins.length === 0 ? (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-16 glass-card border-dashed">
             <BookOpen className="w-16 h-16 mx-auto text-muted-foreground mb-4" />

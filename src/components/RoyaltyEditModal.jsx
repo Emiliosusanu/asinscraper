@@ -12,7 +12,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/customSupabaseClient';
 import { toast } from '@/components/ui/use-toast';
-import { Loader2, Info, TrendingUp, Calendar, BarChart2 } from 'lucide-react';
+import { Info, TrendingUp, Calendar, BarChart2 } from 'lucide-react';
+import BrandPreloader from '@/components/BrandPreloader';
 import { calculateSalesFromBsr, calculateIncome } from '@/lib/incomeCalculator';
 import { estimateRoyalty, explainRoyalty } from '@/lib/royaltyEstimator';
 
@@ -315,11 +316,11 @@ const RoyaltyEditModal = ({ asinData, isOpen, onClose, onRoyaltyUpdate }) => {
         </div>
         <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-0">
           <Button variant="outline" onClick={onClose} className="w-full sm:w-auto h-9 text-sm text-white border-slate-600 hover:bg-slate-800">Annulla</Button>
-          <Button onClick={async () => {
+          <Button onClick={() => {
             // Persist new attributes together with royalty mode
-            await handleSaveWithAttributes();
+            handleSaveWithAttributes();
           }} disabled={isSaving} className="w-full sm:w-auto h-9 text-sm bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
-            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            {isSaving ? <BrandPreloader size={18} className="mr-2" /> : null}
             Salva Royalty
           </Button>
         </DialogFooter>

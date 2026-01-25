@@ -29,3 +29,6 @@ pnpm-debug.log*
 coverage/
 *.local
 vite.config.js.timestamp-*.mjs
+
+# Supabase
+supabase/.temp/

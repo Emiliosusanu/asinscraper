@@ -1,5 +1,5 @@
 import React from 'react';
-import { Star, TrendingUp, DollarSign, RefreshCcw, Trash2, Loader2, LineChart, Edit, BarChart2, Clock, BookOpen, Calendar, MessageCircle, PackageCheck, PackageX, History } from 'lucide-react';
+import { Star, TrendingUp, DollarSign, RefreshCcw, Trash2, LineChart, Edit, BarChart2, Clock, BookOpen, Calendar, MessageCircle, PackageCheck, PackageX, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { calculateSalesFromBsr, calculateIncome } from '@/lib/incomeCalculator';
 import { estimateRoyalty } from '@/lib/royaltyEstimator';
@@ -9,6 +9,7 @@ import BestsellerBadge from '@/components/BestsellerBadge';
 import GreatOnKindleBadge from '@/components/GreatOnKindleBadge';
 import AsinAcosGuideModal from '@/components/AsinAcosGuideModal';
 import CircularProgress from '@/components/ui/CircularProgress';
+import BrandPreloader from '@/components/BrandPreloader';
 
 const AsinCard = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart, onEditRoyalty, onShowReviews, onShowLogs, topBook, isRefreshing }) => {
   const handleRefresh = (e) => {
@@ -183,6 +184,9 @@ React.useEffect(() => {
       {/* local keyframes for pulsing */}
       <style>{`
         @keyframes cardPulse { 0%, 100% { opacity: 0.22; } 50% { opacity: 0.6; } }
+        @keyframes coverBorderSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes coverSparkle { 0% { background-position: 0% 0%, 100% 20%, 40% 100%, 0% 100%; opacity: 0.28; } 50% { background-position: 100% 0%, 0% 80%, 70% 0%, 100% 100%; opacity: 0.5; } 100% { background-position: 0% 0%, 100% 20%, 40% 100%, 0% 100%; opacity: 0.28; } }
+        @media (prefers-reduced-motion: reduce) { .cover-anim { animation: none !important; } }
       `}</style>
       {/* mouse-follow light, white neon with screen blend */}
       <div
@@ -197,7 +201,7 @@ React.useEffect(() => {
       <div className="flex gap-4 mb-4">
         <a href={amazonLink} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 relative group/cover">
           {data.is_bestseller && (
-            <div className="absolute left-2 top-2 z-10 flex flex-col gap-1 items-start">
+            <div className="absolute left-1 top-1 z-10 flex flex-col gap-0.5 items-start">
               <div className="sm:hidden">
                 <BestsellerBadge micro />
               </div>
@@ -217,7 +221,7 @@ React.useEffect(() => {
             </div>
           )}
           {!data.is_bestseller && data.is_great_on_kindle && (
-            <div className="absolute left-2 top-2 z-10">
+            <div className="absolute left-1 top-1 z-10">
               <div className="sm:hidden">
                 <GreatOnKindleBadge micro />
               </div>
@@ -227,6 +231,27 @@ React.useEffect(() => {
             </div>
           )}
           <div className="relative w-24 h-36 overflow-hidden rounded-md ring-1 ring-white/10 transition-colors duration-200 md:group-hover/cover:ring-white/40">
+             <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+               <div
+                 className="cover-anim absolute inset-0 rounded-md"
+                 style={{
+                   background: 'conic-gradient(from 180deg, rgba(255,255,255,0.0), rgba(255,255,255,0.20), rgba(255,255,255,0.0), rgba(56,189,248,0.16), rgba(255,255,255,0.0), rgba(251,146,60,0.16), rgba(255,255,255,0.0))',
+                   WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px))',
+                   mask: 'radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px))',
+                   opacity: 0.55,
+                   animation: 'coverBorderSpin 10s linear infinite'
+                 }}
+               />
+               <div
+                 className="cover-anim absolute inset-0 rounded-md mix-blend-screen"
+                 style={{
+                   backgroundImage: 'radial-gradient(circle at 10% 20%, rgba(255,255,255,0.55) 0px, rgba(255,255,255,0) 10px), radial-gradient(circle at 85% 15%, rgba(56,189,248,0.55) 0px, rgba(56,189,248,0) 12px), radial-gradient(circle at 70% 85%, rgba(251,146,60,0.55) 0px, rgba(251,146,60,0) 12px), radial-gradient(circle at 20% 80%, rgba(255,255,255,0.40) 0px, rgba(255,255,255,0) 14px)',
+                   backgroundSize: '120% 120%, 140% 140%, 140% 140%, 160% 160%',
+                   opacity: 0.28,
+                   animation: 'coverSparkle 2200ms ease-in-out infinite'
+                 }}
+               />
+             </div>
              {/* progress indicator (scraper update) */}
              {isRefreshing && (
                <div className="absolute top-1 right-1 z-10">
@@ -446,7 +471,7 @@ React.useEffect(() => {
           )}
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
             <Button onClick={handleRefresh} size="icon" variant="ghost" className="w-8 h-8" disabled={isRefreshing}>
-              {isRefreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
+              {isRefreshing ? <BrandPreloader size={18} /> : <RefreshCcw className="w-4 h-4" />}
             </Button>
             <Button onClick={handleShowLogs} size="icon" variant="ghost" className="w-8 h-8">
               <History className="w-4 h-4" />

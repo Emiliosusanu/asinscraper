@@ -3,7 +3,8 @@ import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Button } from '@/components/ui/button';
-import { Loader2, LogIn, UserPlus, Bot } from 'lucide-react';
+import { LogIn, UserPlus, Bot } from 'lucide-react';
+import BrandPreloader from '@/components/BrandPreloader';
 const Login = () => {
   const {
     signIn,
@@ -61,7 +62,7 @@ const Login = () => {
             </div>
             <div>
               <Button type="submit" className="w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20" disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : isLoginView ? <LogIn className="mr-2 h-4 w-4" /> : <UserPlus className="mr-2 h-4 w-4" />}
+                {isSubmitting ? <BrandPreloader size={18} className="mr-2" /> : isLoginView ? <LogIn className="mr-2 h-4 w-4" /> : <UserPlus className="mr-2 h-4 w-4" />}
                 {isSubmitting ? 'Processing...' : isLoginView ? 'Sign In' : 'Sign Up'}
               </Button>
             </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { BookOpen, TrendingUp, Plus, BarChart3, Eye, Loader2 } from 'lucide-react';
+import { BookOpen, TrendingUp, Plus, BarChart3, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/use-toast';
 import BookCard from '@/components/BookCard';
@@ -10,6 +10,7 @@ import TrendChart from '@/components/TrendChart';
 import StatsOverview from '@/components/StatsOverview';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import BrandPreloader from '@/components/BrandPreloader';
 
 const BookOrganizer = () => {
   const [books, setBooks] = useState([]);
@@ -150,7 +151,7 @@ const BookOrganizer = () => {
                 {viewMode === 'grid' ? 'Chart View' : 'Grid View'}
               </Button>
               <Button onClick={handleRefreshData} variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20" disabled={isLoading}>
-                {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <TrendingUp className="w-4 h-4 mr-2" />}
+                {isLoading ? <BrandPreloader size={18} className="mr-2" /> : <TrendingUp className="w-4 h-4 mr-2" />}
                 Refresh Data
               </Button>
               <Button onClick={() => setIsAddModalOpen(true)} className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg">
@@ -165,7 +166,7 @@ const BookOrganizer = () => {
 
         {isLoading ? (
           <div className="flex justify-center items-center py-16">
-            <Loader2 className="w-16 h-16 text-white animate-spin" />
+            <BrandPreloader size={84} />
           </div>
         ) : viewMode === 'grid' ? (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
