@@ -40,6 +40,44 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+const IN_STOCK_CODES = new Set([
+  'IN_STOCK',
+  'LOW_STOCK',
+  'SHIP_DELAY',
+  'OTHER_SELLERS',
+  'AVAILABLE_SOON',
+  'POD',
+  'PREORDER',
+  'MADE_TO_ORDER',
+]);
+
+const OUT_OF_STOCK_CODES = new Set([
+  'OOS',
+  'OUT_OF_STOCK',
+  'UNAVAILABLE',
+]);
+
+function getBookCounts(items) {
+  const list = Array.isArray(items) ? items : [];
+  const total = list.length;
+  let inStock = 0;
+  let outOfStock = 0;
+  let other = 0;
+
+  for (const a of list) {
+    const code = String(a?.availability_code || '').toUpperCase();
+    if (!code) {
+      other++;
+      continue;
+    }
+    if (IN_STOCK_CODES.has(code)) inStock++;
+    else if (OUT_OF_STOCK_CODES.has(code)) outOfStock++;
+    else other++;
+  }
+
+  return { total, inStock, outOfStock, other };
+}
+
 const AsinListFilters = ({ sort, setSort, filter, setFilter }) => (
   <div className="flex items-center gap-2 mb-4">
     <Input
@@ -450,6 +488,16 @@ useEffect(() => {
       .filter(item => item.title && item.title.toLowerCase().includes(filter.toLowerCase()));
   }, [trackedAsins, sort, filter, showArchived]);
 
+  const bookCountsAll = useMemo(() => {
+    const list = Array.isArray(trackedAsins) ? trackedAsins : [];
+    const active = list.filter(item => item?.archived !== true);
+    const archived = list.filter(item => item?.archived === true);
+    return { active: getBookCounts(active), archived: getBookCounts(archived) };
+  }, [trackedAsins]);
+
+  const bookCounts = showArchived ? bookCountsAll.archived : bookCountsAll.active;
+  const otherGroupCounts = showArchived ? bookCountsAll.active : bookCountsAll.archived;
+
   const computePoolReviews7d = useCallback(async () => {
     if (!user) return setPoolReviews7d({ gained: 0, lost: 0 });
     const items = (trackedAsins || []).filter(a => (showArchived ? a.archived === true : a.archived !== true));
@@ -718,10 +766,14 @@ const handleRefreshAll = async () => {
                     )}
 
                     <div
-                      className="shrink-0 h-12 min-w-[56px] px-4 rounded-full border border-white/10 bg-gradient-to-b from-white/[0.08] to-white/[0.03] shadow-[0_10px_26px_rgba(0,0,0,0.25),0_18px_36px_rgba(0,0,0,0.35)_inset,0_0_0_1px_rgba(255,255,255,0.04)_inset] flex items-center justify-center"
-                      title="Libri"
+                      className="shrink-0 h-12 min-w-[72px] px-3 rounded-full border border-white/10 bg-gradient-to-b from-white/[0.08] to-white/[0.03] shadow-[0_10px_26px_rgba(0,0,0,0.25),0_18px_36px_rgba(0,0,0,0.35)_inset,0_0_0_1px_rgba(255,255,255,0.04)_inset] flex flex-col items-center justify-center leading-none"
+                      title={`Attivi: ${bookCountsAll.active.inStock}/${bookCountsAll.active.total} (OOS ${bookCountsAll.active.outOfStock}, ALT ${bookCountsAll.active.other}) • Archiviati: ${bookCountsAll.archived.inStock}/${bookCountsAll.archived.total} (OOS ${bookCountsAll.archived.outOfStock}, ALT ${bookCountsAll.archived.other})`}
                     >
-                      <span className="text-3xl font-semibold tabular-nums text-foreground">{filteredAndSortedAsins.length}</span>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-3xl font-semibold tabular-nums text-foreground">{bookCounts.inStock}</span>
+                        <span className="text-xs font-semibold tabular-nums text-muted-foreground/80">/{bookCounts.total}</span>
+                      </div>
+                      <div className="text-[10px] font-semibold tabular-nums text-red-200/80">OOS {bookCounts.outOfStock} · ALT {bookCounts.other}{otherGroupCounts.total ? ` · ${showArchived ? 'ATT' : 'ARC'} ${otherGroupCounts.total}` : ''}</div>
                     </div>
 
                     <div
@@ -754,9 +806,13 @@ const handleRefreshAll = async () => {
                 <span className={`hidden sm:inline text-xs font-semibold ${portfolioQi.avg >= 70 ? 'text-emerald-300' : portfolioQi.avg >= 45 ? 'text-yellow-300' : 'text-red-300'}`}>{portfolioQi.label}</span>
               </div>
             )}
-            <div className="shrink-0 flex items-end gap-2 px-3 py-1.5 rounded-full border border-white/10 bg-gradient-to-r from-white/[0.06] to-white/[0.03] shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset]">
-              <span className="text-3xl sm:text-4xl font-semibold tabular-nums text-foreground">{filteredAndSortedAsins.length}</span>
-              <span className="hidden sm:inline text-sm text-muted-foreground pb-1">libri</span>
+            <div
+              className="shrink-0 flex items-end gap-2 px-3 py-1.5 rounded-full border border-white/10 bg-gradient-to-r from-white/[0.06] to-white/[0.03] shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset]"
+              title={`Attivi: ${bookCountsAll.active.inStock}/${bookCountsAll.active.total} (OOS ${bookCountsAll.active.outOfStock}, ALT ${bookCountsAll.active.other}) • Archiviati: ${bookCountsAll.archived.inStock}/${bookCountsAll.archived.total} (OOS ${bookCountsAll.archived.outOfStock}, ALT ${bookCountsAll.archived.other})`}
+            >
+              <span className="text-3xl sm:text-4xl font-semibold tabular-nums text-foreground">{bookCounts.inStock}</span>
+              <span className="text-xs font-semibold tabular-nums text-muted-foreground/80 pb-1">/{bookCounts.total}</span>
+              <span className="hidden sm:inline text-[11px] font-semibold tabular-nums text-red-200/80 pb-1">OOS {bookCounts.outOfStock} · ALT {bookCounts.other}{otherGroupCounts.total ? ` · ${showArchived ? 'ATT' : 'ARC'} ${otherGroupCounts.total}` : ''}</span>
             </div>
             <div
               className="shrink-0 flex items-center gap-2.5 px-3 py-1.5 rounded-full border border-white/10 bg-gradient-to-r from-white/[0.06] to-white/[0.03] shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset] hover:border-white/20 transition-colors"
