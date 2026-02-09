@@ -235,6 +235,12 @@ const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
+function isValidEmail(s: any): boolean {
+  const t = String(s || '').trim();
+  if (!t) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
+}
+
 async function getAccountEmail(client: any, userId: string): Promise<string | null> {
   try {
     const { data, error } = await client.auth.admin.getUserById(userId);
@@ -593,15 +599,28 @@ serve(async (req: Request) => {
     try {
       const { data } = await client
         .from('settings')
-        .select('stock_alert_enabled, stock_alert_on_change')
+        .select('email_alert_recipient, stock_alert_enabled, stock_alert_on_change')
         .eq('user_id', userId)
         .maybeSingle();
       alertSettings = data || null;
-    } catch (_e) {}
+    } catch (_e) {
+      try {
+        const { data } = await client
+          .from('settings')
+          .select('stock_alert_enabled, stock_alert_on_change')
+          .eq('user_id', userId)
+          .maybeSingle();
+        alertSettings = data || null;
+      } catch (_e2) {
+        alertSettings = null;
+      }
+    }
     const stockAlertEnabled = !!alertSettings?.stock_alert_enabled;
     const stockAlertOnChange = !!alertSettings?.stock_alert_on_change;
     const wantsAnyEmailAlert = stockAlertEnabled || stockAlertOnChange;
-    const accountEmail = wantsAnyEmailAlert ? await getAccountEmail(client, userId) : null;
+    const recipientFromSettings = String(alertSettings?.email_alert_recipient || '').trim();
+    const accountEmail = !isValidEmail(recipientFromSettings) && wantsAnyEmailAlert ? await getAccountEmail(client, userId) : null;
+    const effectiveEmailRecipient = isValidEmail(recipientFromSettings) ? recipientFromSettings : accountEmail;
 
     // Build product URL
     const dom = countryToDomain[country] || countryToDomain["com"];
@@ -757,7 +776,7 @@ serve(async (req: Request) => {
           .eq("id", asinRow.id);
       }
 
-      if (wantsAnyEmailAlert && accountEmail && prevCode && newCode && prevCode !== newCode) {
+      if (wantsAnyEmailAlert && effectiveEmailRecipient && prevCode && newCode && prevCode !== newCode) {
         try {
           const dayKey = new Date().toISOString().slice(0, 10);
           const prevEff = normalizeAvailabilityForChange(prevCode);
@@ -785,7 +804,7 @@ serve(async (req: Request) => {
               `Now: ${newCode}`,
               `Time (UTC): ${new Date().toISOString()}`,
             ].filter(Boolean).join('\n');
-            await sendDedupedEmailAlert(client, userId, asin, 'stock_change', dedupeKey, accountEmail, subject, body);
+            await sendDedupedEmailAlert(client, userId, asin, 'stock_change', dedupeKey, effectiveEmailRecipient, subject, body);
           }
 
           if (
@@ -802,7 +821,7 @@ serve(async (req: Request) => {
               `Now: ${newCode}`,
               `Time (UTC): ${new Date().toISOString()}`,
             ].filter(Boolean).join('\n');
-            await sendDedupedEmailAlert(client, userId, asin, 'stock_oos', dedupeKey, accountEmail, subject, body);
+            await sendDedupedEmailAlert(client, userId, asin, 'stock_oos', dedupeKey, effectiveEmailRecipient, subject, body);
           }
         } catch (e: any) {
           console.error('Email alert send error', e?.message || e);

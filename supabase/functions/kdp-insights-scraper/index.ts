@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.4?target=deno&bundle";
-import * as cheerio from "https://esm.sh/cheerio@1.0.0-rc.12?target=deno&bundle";
+import * as cheerio from "npm:cheerio@1.0.0-rc.12";
 
 declare const Deno: any;
 /* ======================= Helpers ======================= */ function getTextSafe($, sel) {
@@ -267,6 +267,12 @@ const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   }
 });
 
+function isValidEmail(s: any) {
+  const t = String(s || "").trim();
+  if (!t) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
+}
+
 async function getAccountEmail(userId) {
   try {
     const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
@@ -504,11 +510,22 @@ async function logAsinEvent(userId, asinDataId, eventType, description, metadata
     try {
       const { data } = await supabaseAdmin
         .from("settings")
-        .select("stock_alert_enabled, stock_alert_on_change, bsr_alert_enabled, bsr_alert_threshold_pct")
+        .select("email_alert_recipient, stock_alert_enabled, stock_alert_on_change, bsr_alert_enabled, bsr_alert_threshold_pct")
         .eq("user_id", userId)
         .maybeSingle();
       alertSettings = data || null;
-    } catch (_) {}
+    } catch (_e) {
+      try {
+        const { data } = await supabaseAdmin
+          .from("settings")
+          .select("stock_alert_enabled, stock_alert_on_change, bsr_alert_enabled, bsr_alert_threshold_pct")
+          .eq("user_id", userId)
+          .maybeSingle();
+        alertSettings = data || null;
+      } catch (_) {
+        alertSettings = null;
+      }
+    }
     const stockAlertEnabled = !!alertSettings?.stock_alert_enabled;
     const stockAlertOnChange = !!alertSettings?.stock_alert_on_change;
     const bsrAlertEnabled = !!alertSettings?.bsr_alert_enabled;
@@ -516,7 +533,12 @@ async function logAsinEvent(userId, asinDataId, eventType, description, metadata
       ? Number(alertSettings?.bsr_alert_threshold_pct)
       : 20;
     const wantsAnyEmailAlert = stockAlertEnabled || stockAlertOnChange || bsrAlertEnabled;
-    const accountEmail = wantsAnyEmailAlert ? await getAccountEmail(userId) : null;
+    const recipientFromSettings = String(alertSettings?.email_alert_recipient || "").trim();
+    const effectiveEmailRecipient = isValidEmail(recipientFromSettings)
+      ? recipientFromSettings
+      : wantsAnyEmailAlert
+        ? await getAccountEmail(userId)
+        : null;
 
     let attempts = 0;
     const excludedKeyIds = [];
@@ -703,7 +725,7 @@ async function logAsinEvent(userId, asinDataId, eventType, description, metadata
             });
           }
 
-          if (wantsAnyEmailAlert && accountEmail) {
+          if (wantsAnyEmailAlert && effectiveEmailRecipient) {
             const dayKey = new Date().toISOString().slice(0, 10);
             const prevCode = existingAsin.availability_code || null;
             const newCode = availability_code || null;
@@ -734,11 +756,18 @@ async function logAsinEvent(userId, asinDataId, eventType, description, metadata
                 `Now: ${newCode}`,
                 `Time (UTC): ${new Date().toISOString()}`
               ].filter(Boolean).join("\n");
-              await sendDedupedEmailAlert(userId, asin, "stock_change", dedupeKey, accountEmail, subject, body);
+              await sendDedupedEmailAlert(userId, asin, "stock_change", dedupeKey, effectiveEmailRecipient, subject, body);
             }
 
-            if (stockAlertEnabled && prevCode && newCode && prevCode !== newCode && inStockCodes.has(prevCode) && outOfStockCodes.has(newCode)) {
-              const dedupeKey = `stock_oos:${asin}:${newCode}:${dayKey}`;
+            if (
+              stockAlertEnabled &&
+              prevCode &&
+              newCode &&
+              String(prevCode).toUpperCase() !== String(newCode).toUpperCase() &&
+              inStockCodes.has(String(prevCode).toUpperCase()) &&
+              outOfStockCodes.has(String(newCode).toUpperCase())
+            ) {
+              const dedupeKey = `stock_oos:${asin}:${String(newCode).toUpperCase()}:${dayKey}`;
               const subject = `[KDPInsights] Out of stock (${asin})`;
               const body = [
                 `ASIN: ${asin}`,
@@ -747,7 +776,7 @@ async function logAsinEvent(userId, asinDataId, eventType, description, metadata
                 `Now: ${newCode}`,
                 `Time (UTC): ${new Date().toISOString()}`
               ].filter(Boolean).join("\n");
-              await sendDedupedEmailAlert(userId, asin, "stock_oos", dedupeKey, accountEmail, subject, body);
+              await sendDedupedEmailAlert(userId, asin, "stock_oos", dedupeKey, effectiveEmailRecipient, subject, body);
             }
 
             if (bsrAlertEnabled) {
@@ -767,7 +796,7 @@ async function logAsinEvent(userId, asinDataId, eventType, description, metadata
                     `Change: ${pct.toFixed(1)}% (threshold ${Number(bsrAlertThresholdPct).toFixed(0)}%)`,
                     `Time (UTC): ${new Date().toISOString()}`
                   ].filter(Boolean).join("\n");
-                  await sendDedupedEmailAlert(userId, asin, "bsr_pct", dedupeKey, accountEmail, subject, body);
+                  await sendDedupedEmailAlert(userId, asin, "bsr_pct", dedupeKey, effectiveEmailRecipient, subject, body);
                 }
               }
             }

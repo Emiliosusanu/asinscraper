@@ -20,6 +20,7 @@ const AutomationSettings = () => {
     const { user } = useAuth();
     const [runsPerDay, setRunsPerDay] = useState(1);
     const [startHour, setStartHour] = useState(8);
+    const [emailAlertRecipient, setEmailAlertRecipient] = useState('');
     const [stockAlertEnabled, setStockAlertEnabled] = useState(false);
     const [stockAlertOnChange, setStockAlertOnChange] = useState(false);
     const [bsrAlertEnabled, setBsrAlertEnabled] = useState(false);
@@ -36,7 +37,7 @@ const AutomationSettings = () => {
         setIsLoading(true);
         const { data, error } = await supabase
             .from('settings')
-            .select('scraping_interval, scraping_start_hour, stock_alert_enabled, stock_alert_on_change, bsr_alert_enabled, bsr_alert_threshold_pct')
+            .select('scraping_interval, scraping_start_hour, email_alert_recipient, stock_alert_enabled, stock_alert_on_change, bsr_alert_enabled, bsr_alert_threshold_pct')
             .eq('user_id', user.id)
             .single();
 
@@ -45,6 +46,7 @@ const AutomationSettings = () => {
         } else if (data) {
             setRunsPerDay(parseInt(data.scraping_interval, 10) || 1);
             setStartHour(data.scraping_start_hour || 8);
+            setEmailAlertRecipient(String(data.email_alert_recipient || ''));
             setStockAlertEnabled(!!data.stock_alert_enabled);
             setStockAlertOnChange(!!data.stock_alert_on_change);
             setBsrAlertEnabled(!!data.bsr_alert_enabled);
@@ -63,12 +65,21 @@ const AutomationSettings = () => {
 
     const handleSaveSettings = async () => {
         setIsSaving(true);
+
+        const recipientTrim = String(emailAlertRecipient || '').trim();
+        if (recipientTrim && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientTrim)) {
+            toast({ title: "Email non valida", description: "Inserisci una email valida oppure lascia vuoto.", variant: 'destructive' });
+            setIsSaving(false);
+            return;
+        }
+
         const { error } = await supabase
             .from('settings')
             .upsert({
                 user_id: user.id,
                 scraping_interval: runsPerDay.toString(),
                 scraping_start_hour: startHour,
+                email_alert_recipient: recipientTrim || null,
                 stock_alert_enabled: stockAlertEnabled,
                 stock_alert_on_change: stockAlertOnChange,
                 bsr_alert_enabled: bsrAlertEnabled,
@@ -86,11 +97,17 @@ const AutomationSettings = () => {
     const handleSendTestEmail = async () => {
         try {
             setIsTestingEmail(true);
-            const { error } = await supabase.functions.invoke('send_test_email', { body: {} });
+            const recipientTrim = String(emailAlertRecipient || '').trim();
+            if (recipientTrim && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientTrim)) {
+                toast({ title: 'Test email fallito', description: 'Email destinatario non valida.', variant: 'destructive' });
+                return;
+            }
+            const effectiveRecipient = recipientTrim || user?.email || '';
+            const { error } = await supabase.functions.invoke('send_test_email', { body: { toEmail: recipientTrim || undefined } });
             if (error) {
                 toast({ title: 'Test email fallito', description: error.message, variant: 'destructive' });
             } else {
-                toast({ title: 'Email di test inviata', description: `Controlla la casella: ${user?.email || ''}` });
+                toast({ title: 'Email di test inviata', description: `Controlla la casella: ${effectiveRecipient}` });
             }
         } catch (e) {
             toast({ title: 'Test email fallito', description: String(e?.message || e), variant: 'destructive' });
@@ -150,8 +167,23 @@ const AutomationSettings = () => {
                         Conferme via Email
                     </Label>
                     <p className="text-sm text-muted-foreground mb-4">
-                        Le email vengono inviate a: <span className="font-semibold text-foreground">{user?.email || '—'}</span>
+                        Le email vengono inviate a: <span className="font-semibold text-foreground">{String(emailAlertRecipient || '').trim() || user?.email || '—'}</span>
                     </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-[1fr_280px] items-center gap-3 mb-4">
+                        <div className="min-w-0">
+                            <p className="text-sm font-medium text-foreground">Email destinatario (opzionale)</p>
+                            <p className="text-xs text-muted-foreground">Se vuoto, useremo la tua email account.</p>
+                        </div>
+                        <Input
+                            type="email"
+                            inputMode="email"
+                            value={emailAlertRecipient}
+                            onChange={(e) => setEmailAlertRecipient(e.target.value)}
+                            placeholder="es. nome@gmail.com"
+                            className="glass-input"
+                        />
+                    </div>
 
                     <div className="flex justify-end mb-4">
                         <Button onClick={handleSendTestEmail} disabled={isTestingEmail} variant="secondary">
