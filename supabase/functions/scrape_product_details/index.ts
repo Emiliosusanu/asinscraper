@@ -241,15 +241,123 @@ function isValidEmail(s: any): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
 }
 
-async function getAccountEmail(client: any, userId: string): Promise<string | null> {
+async function getAccountProfile(client: any, userId: string): Promise<{ email: string | null; firstName: string | null }> {
   try {
     const { data, error } = await client.auth.admin.getUserById(userId);
-    if (error) return null;
-    const email = (data as any)?.user?.email;
-    return email ? String(email) : null;
+    if (error) return { email: null, firstName: null };
+    const email = (data as any)?.user?.email ? String((data as any).user.email) : null;
+    const meta = (data as any)?.user?.user_metadata || {};
+    const rawName = String(meta?.first_name || meta?.full_name || '').trim();
+    const firstName = rawName ? rawName.split(/\s+/)[0] : (email ? email.split('@')[0] : null);
+    return { email, firstName: firstName ? String(firstName) : null };
   } catch (_e) {
-    return null;
+    return { email: null, firstName: null };
   }
+}
+
+function formatTimestampUtc(d: Date): string {
+  const iso = d.toISOString();
+  return iso.slice(0, 19).replace('T', ' ');
+}
+
+function getMarketplaceDomain(country: string): string {
+  return countryToDomain[String(country || '').toLowerCase()] || countryToDomain['com'];
+}
+
+function getDashboardLink(req: Request): string {
+  const base = String((Deno as any)?.env?.get?.('APP_BASE_URL') || '').trim();
+  if (base) return base.replace(/\/$/, '') + '/';
+  const origin = String(req.headers.get('origin') || '').trim();
+  return origin ? origin.replace(/\/$/, '') + '/' : '';
+}
+
+function renderStockStatusLabel(code: any): string {
+  const c = String(code || '').toUpperCase();
+  const inStockCodes = new Set(['IN_STOCK', 'LOW_STOCK', 'SHIP_DELAY', 'POD', 'OTHER_SELLERS', 'MADE_TO_ORDER', 'AVAILABLE_SOON', 'PREORDER']);
+  const outOfStockCodes = new Set(['OOS', 'UNAVAILABLE', 'OUT_OF_STOCK']);
+  if (inStockCodes.has(c)) return 'IN STOCK';
+  if (outOfStockCodes.has(c)) return 'OUT OF STOCK';
+  return c || 'UNKNOWN';
+}
+
+function buildStockOosEmail(args: {
+  firstName: string | null;
+  bookTitle: string;
+  asin: string;
+  marketplace: string;
+  oldCode: any;
+  newCode: any;
+  timestampUtc: string;
+  dashboardLink: string;
+}): { subject: string; text: string } {
+  const name = args.firstName || 'there';
+  const subject = `Out of stock · ${args.bookTitle} · Amazon`;
+  const lines: string[] = [];
+  lines.push(`Hi ${name},`);
+  lines.push('');
+  lines.push('One of your books is currently out of stock on Amazon.');
+  lines.push('');
+  lines.push('Book:');
+  lines.push(args.bookTitle);
+  lines.push(`ASIN: \`${args.asin}\``);
+  lines.push(`Marketplace: ${args.marketplace}`);
+  lines.push('');
+  lines.push('Stock status changed:');
+  lines.push(`${renderStockStatusLabel(args.oldCode)} → ${renderStockStatusLabel(args.newCode)}`);
+  lines.push('');
+  lines.push(`Detected at: ${args.timestampUtc} UTC`);
+  lines.push('');
+  lines.push("If you’re running ads for this ASIN, consider pausing campaigns until availability is restored.");
+  if (args.dashboardLink) {
+    lines.push('');
+    lines.push('Open dashboard:');
+    lines.push(args.dashboardLink);
+  }
+  lines.push('');
+  lines.push('—');
+  lines.push('KDP Insight Bot');
+  lines.push('Automated alert · No reply needed');
+  return { subject, text: lines.join('\n') };
+}
+
+function buildStockChangeEmail(args: {
+  firstName: string | null;
+  bookTitle: string;
+  asin: string;
+  marketplace: string;
+  oldCode: any;
+  newCode: any;
+  timestampUtc: string;
+  dashboardLink: string;
+}): { subject: string; text: string } {
+  const name = args.firstName || 'there';
+  const subject = `Stock status update · ${args.bookTitle} · Amazon`;
+  const lines: string[] = [];
+  lines.push(`Hi ${name},`);
+  lines.push('');
+  lines.push('Amazon availability has changed for one of your tracked books.');
+  lines.push('');
+  lines.push('Book:');
+  lines.push(args.bookTitle);
+  lines.push(`ASIN: \`${args.asin}\``);
+  lines.push(`Marketplace: ${args.marketplace}`);
+  lines.push('');
+  lines.push('Stock status:');
+  lines.push(`${renderStockStatusLabel(args.oldCode)} → ${renderStockStatusLabel(args.newCode)}`);
+  lines.push('');
+  lines.push(`Detected at: ${args.timestampUtc} UTC`);
+  lines.push('');
+  lines.push('This email is sent only when availability changes.');
+  if (args.dashboardLink) {
+    lines.push('');
+    lines.push('View book:');
+    lines.push(args.dashboardLink);
+  }
+  lines.push('');
+  lines.push('—');
+  lines.push('KDP Insight Bot');
+  lines.push('Automated alert · No reply needed');
+  return { subject, text: lines.join('\n') };
 }
 
 async function sendMailgunEmail(toEmail: string, subject: string, text: string): Promise<{ ok: boolean; error?: string }> {
@@ -619,8 +727,11 @@ serve(async (req: Request) => {
     const stockAlertOnChange = !!alertSettings?.stock_alert_on_change;
     const wantsAnyEmailAlert = stockAlertEnabled || stockAlertOnChange;
     const recipientFromSettings = String(alertSettings?.email_alert_recipient || '').trim();
-    const accountEmail = !isValidEmail(recipientFromSettings) && wantsAnyEmailAlert ? await getAccountEmail(client, userId) : null;
+    const profile = wantsAnyEmailAlert ? await getAccountProfile(client, userId) : { email: null, firstName: null };
+    const accountEmail = !isValidEmail(recipientFromSettings) ? profile.email : null;
     const effectiveEmailRecipient = isValidEmail(recipientFromSettings) ? recipientFromSettings : accountEmail;
+    const dashboardLink = getDashboardLink(req);
+    const marketplace = getMarketplaceDomain(country);
 
     // Build product URL
     const dom = countryToDomain[country] || countryToDomain["com"];
@@ -796,15 +907,17 @@ serve(async (req: Request) => {
 
           if (stockAlertOnChange && prevEff && newEff && prevEff !== newEff) {
             const dedupeKey = `stock_change:${asin}:${prevEff}->${newEff}:${dayKey}`;
-            const subject = `[KDPInsights] Stock changed (${asin})`;
-            const body = [
-              `ASIN: ${asin}`,
-              `Title: ${title || ''}`,
-              `Previous: ${prevCode}`,
-              `Now: ${newCode}`,
-              `Time (UTC): ${new Date().toISOString()}`,
-            ].filter(Boolean).join('\n');
-            await sendDedupedEmailAlert(client, userId, asin, 'stock_change', dedupeKey, effectiveEmailRecipient, subject, body);
+            const email = buildStockChangeEmail({
+              firstName: profile.firstName,
+              bookTitle: String(title || '').trim() || '(Untitled)',
+              asin: String(asin),
+              marketplace,
+              oldCode: prevCode,
+              newCode,
+              timestampUtc: formatTimestampUtc(new Date()),
+              dashboardLink,
+            });
+            await sendDedupedEmailAlert(client, userId, asin, 'stock_change', dedupeKey, effectiveEmailRecipient, email.subject, email.text);
           }
 
           if (
@@ -813,15 +926,17 @@ serve(async (req: Request) => {
             outOfStockCodes.has(String(newCode).toUpperCase())
           ) {
             const dedupeKey = `stock_oos:${asin}:${String(newCode).toUpperCase()}:${dayKey}`;
-            const subject = `[KDPInsights] Out of stock (${asin})`;
-            const body = [
-              `ASIN: ${asin}`,
-              `Title: ${title || ''}`,
-              `Previous: ${prevCode}`,
-              `Now: ${newCode}`,
-              `Time (UTC): ${new Date().toISOString()}`,
-            ].filter(Boolean).join('\n');
-            await sendDedupedEmailAlert(client, userId, asin, 'stock_oos', dedupeKey, effectiveEmailRecipient, subject, body);
+            const email = buildStockOosEmail({
+              firstName: profile.firstName,
+              bookTitle: String(title || '').trim() || '(Untitled)',
+              asin: String(asin),
+              marketplace,
+              oldCode: prevCode,
+              newCode,
+              timestampUtc: formatTimestampUtc(new Date()),
+              dashboardLink,
+            });
+            await sendDedupedEmailAlert(client, userId, asin, 'stock_oos', dedupeKey, effectiveEmailRecipient, email.subject, email.text);
           }
         } catch (e: any) {
           console.error('Email alert send error', e?.message || e);

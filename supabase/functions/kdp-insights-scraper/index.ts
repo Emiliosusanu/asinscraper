@@ -273,15 +273,177 @@ function isValidEmail(s: any) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
 }
 
-async function getAccountEmail(userId) {
+async function getAccountProfile(userId: any): Promise<{ email: string | null; firstName: string | null }> {
   try {
     const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
-    if (error) return null;
-    const email = data?.user?.email;
-    return email ? String(email) : null;
+    if (error) return { email: null, firstName: null };
+    const email = data?.user?.email ? String(data.user.email) : null;
+    const meta = (data as any)?.user?.user_metadata || {};
+    const rawName = String(meta?.first_name || meta?.full_name || "").trim();
+    const firstName = rawName ? rawName.split(/\s+/)[0] : (email ? email.split("@")[0] : null);
+    return { email, firstName: firstName ? String(firstName) : null };
   } catch (_) {
-    return null;
+    return { email: null, firstName: null };
   }
+}
+
+function formatTimestampUtc(d: Date): string {
+  const iso = d.toISOString();
+  return iso.slice(0, 19).replace("T", " ");
+}
+
+function getMarketplaceDomain(country: string): string {
+  const map: Record<string, string> = {
+    com: "amazon.com",
+    us: "amazon.com",
+    it: "amazon.it",
+    de: "amazon.de",
+    fr: "amazon.fr",
+    es: "amazon.es",
+    "co.uk": "amazon.co.uk",
+    uk: "amazon.co.uk"
+  };
+  return map[String(country || "").toLowerCase()] || map.com;
+}
+
+function getDashboardLink(req: Request): string {
+  const base = String(Deno.env.get("APP_BASE_URL") || "").trim();
+  if (base) return base.replace(/\/$/, "") + "/";
+  const origin = String(req.headers.get("origin") || "").trim();
+  return origin ? origin.replace(/\/$/, "") + "/" : "";
+}
+
+function renderStockStatusLabel(code: any): string {
+  const c = String(code || "").toUpperCase();
+  const inStockCodes = new Set(["IN_STOCK", "LOW_STOCK", "SHIP_DELAY", "POD", "OTHER_SELLERS", "MADE_TO_ORDER", "AVAILABLE_SOON", "PREORDER"]);
+  const outOfStockCodes = new Set(["OOS", "UNAVAILABLE", "OUT_OF_STOCK"]);
+  if (inStockCodes.has(c)) return "IN STOCK";
+  if (outOfStockCodes.has(c)) return "OUT OF STOCK";
+  return c || "UNKNOWN";
+}
+
+function buildStockOosEmail(args: {
+  firstName: string | null;
+  bookTitle: string;
+  asin: string;
+  marketplace: string;
+  oldCode: any;
+  newCode: any;
+  timestampUtc: string;
+  dashboardLink: string;
+}): { subject: string; text: string } {
+  const name = args.firstName || "there";
+  const subject = `Out of stock · ${args.bookTitle} · Amazon`;
+  const lines: string[] = [];
+  lines.push(`Hi ${name},`);
+  lines.push("");
+  lines.push("One of your books is currently out of stock on Amazon.");
+  lines.push("");
+  lines.push("Book:");
+  lines.push(args.bookTitle);
+  lines.push(`ASIN: \`${args.asin}\``);
+  lines.push(`Marketplace: ${args.marketplace}`);
+  lines.push("");
+  lines.push("Stock status changed:");
+  lines.push(`${renderStockStatusLabel(args.oldCode)} → ${renderStockStatusLabel(args.newCode)}`);
+  lines.push("");
+  lines.push(`Detected at: ${args.timestampUtc} UTC`);
+  lines.push("");
+  lines.push("If you’re running ads for this ASIN, consider pausing campaigns until availability is restored.");
+  if (args.dashboardLink) {
+    lines.push("");
+    lines.push("Open dashboard:");
+    lines.push(args.dashboardLink);
+  }
+  lines.push("");
+  lines.push("—");
+  lines.push("KDP Insight Bot");
+  lines.push("Automated alert · No reply needed");
+  return { subject, text: lines.join("\n") };
+}
+
+function buildStockChangeEmail(args: {
+  firstName: string | null;
+  bookTitle: string;
+  asin: string;
+  marketplace: string;
+  oldCode: any;
+  newCode: any;
+  timestampUtc: string;
+  dashboardLink: string;
+}): { subject: string; text: string } {
+  const name = args.firstName || "there";
+  const subject = `Stock status update · ${args.bookTitle} · Amazon`;
+  const lines: string[] = [];
+  lines.push(`Hi ${name},`);
+  lines.push("");
+  lines.push("Amazon availability has changed for one of your tracked books.");
+  lines.push("");
+  lines.push("Book:");
+  lines.push(args.bookTitle);
+  lines.push(`ASIN: \`${args.asin}\``);
+  lines.push(`Marketplace: ${args.marketplace}`);
+  lines.push("");
+  lines.push("Stock status:");
+  lines.push(`${renderStockStatusLabel(args.oldCode)} → ${renderStockStatusLabel(args.newCode)}`);
+  lines.push("");
+  lines.push(`Detected at: ${args.timestampUtc} UTC`);
+  lines.push("");
+  lines.push("This email is sent only when availability changes.");
+  if (args.dashboardLink) {
+    lines.push("");
+    lines.push("View book:");
+    lines.push(args.dashboardLink);
+  }
+  lines.push("");
+  lines.push("—");
+  lines.push("KDP Insight Bot");
+  lines.push("Automated alert · No reply needed");
+  return { subject, text: lines.join("\n") };
+}
+
+function buildBsrPctEmail(args: {
+  firstName: string | null;
+  bookTitle: string;
+  asin: string;
+  marketplace: string;
+  oldBsr: number;
+  newBsr: number;
+  pct: number;
+  thresholdPct: number;
+  timestampUtc: string;
+  dashboardLink: string;
+}): { subject: string; text: string } {
+  const name = args.firstName || "there";
+  const pctForSubject = Number.isFinite(args.pct) ? Math.round(args.pct) : 0;
+  const subject = `BSR change ${pctForSubject}% · ${args.bookTitle} · Amazon`;
+  const lines: string[] = [];
+  lines.push(`Hi ${name},`);
+  lines.push("");
+  lines.push("The Best Seller Rank for one of your books changed beyond your alert threshold.");
+  lines.push("");
+  lines.push("Book:");
+  lines.push(args.bookTitle);
+  lines.push(`ASIN: \`${args.asin}\``);
+  lines.push(`Marketplace: ${args.marketplace}`);
+  lines.push("");
+  lines.push("BSR change:");
+  lines.push(`${args.oldBsr} → ${args.newBsr}`);
+  lines.push(`Change: ${args.pct.toFixed(1)}% (threshold ${Math.round(args.thresholdPct)}%)`);
+  lines.push("");
+  lines.push(`Detected at: ${args.timestampUtc} UTC`);
+  lines.push("");
+  lines.push("This may indicate a sales spike, drop, or category movement.");
+  if (args.dashboardLink) {
+    lines.push("");
+    lines.push("View details:");
+    lines.push(args.dashboardLink);
+  }
+  lines.push("");
+  lines.push("—");
+  lines.push("KDP Insight Bot");
+  lines.push("Automated alert · No reply needed");
+  return { subject, text: lines.join("\n") };
 }
 
 async function sendMailgunEmail(toEmail, subject, text) {
@@ -534,11 +696,14 @@ async function logAsinEvent(userId, asinDataId, eventType, description, metadata
       : 20;
     const wantsAnyEmailAlert = stockAlertEnabled || stockAlertOnChange || bsrAlertEnabled;
     const recipientFromSettings = String(alertSettings?.email_alert_recipient || "").trim();
+    const profile = wantsAnyEmailAlert ? await getAccountProfile(userId) : { email: null, firstName: null };
     const effectiveEmailRecipient = isValidEmail(recipientFromSettings)
       ? recipientFromSettings
       : wantsAnyEmailAlert
-        ? await getAccountEmail(userId)
+        ? profile.email
         : null;
+    const dashboardLink = getDashboardLink(req);
+    const marketplace = getMarketplaceDomain(country);
 
     let attempts = 0;
     const excludedKeyIds = [];
@@ -748,15 +913,17 @@ async function logAsinEvent(userId, asinDataId, eventType, description, metadata
 
             if (stockAlertOnChange && prevEff && newEff && prevEff !== newEff) {
               const dedupeKey = `stock_change:${asin}:${prevEff}->${newEff}:${dayKey}`;
-              const subject = `[KDPInsights] Stock changed (${asin})`;
-              const body = [
-                `ASIN: ${asin}`,
-                `Title: ${existingAsin.title || title || ""}`,
-                `Previous: ${prevCode}`,
-                `Now: ${newCode}`,
-                `Time (UTC): ${new Date().toISOString()}`
-              ].filter(Boolean).join("\n");
-              await sendDedupedEmailAlert(userId, asin, "stock_change", dedupeKey, effectiveEmailRecipient, subject, body);
+              const email = buildStockChangeEmail({
+                firstName: profile.firstName,
+                bookTitle: String(existingAsin.title || title || "").trim() || "(Untitled)",
+                asin: String(asin),
+                marketplace,
+                oldCode: prevCode,
+                newCode,
+                timestampUtc: formatTimestampUtc(new Date()),
+                dashboardLink
+              });
+              await sendDedupedEmailAlert(userId, asin, "stock_change", dedupeKey, effectiveEmailRecipient, email.subject, email.text);
             }
 
             if (
@@ -768,15 +935,17 @@ async function logAsinEvent(userId, asinDataId, eventType, description, metadata
               outOfStockCodes.has(String(newCode).toUpperCase())
             ) {
               const dedupeKey = `stock_oos:${asin}:${String(newCode).toUpperCase()}:${dayKey}`;
-              const subject = `[KDPInsights] Out of stock (${asin})`;
-              const body = [
-                `ASIN: ${asin}`,
-                `Title: ${existingAsin.title || title || ""}`,
-                `Previous: ${prevCode}`,
-                `Now: ${newCode}`,
-                `Time (UTC): ${new Date().toISOString()}`
-              ].filter(Boolean).join("\n");
-              await sendDedupedEmailAlert(userId, asin, "stock_oos", dedupeKey, effectiveEmailRecipient, subject, body);
+              const email = buildStockOosEmail({
+                firstName: profile.firstName,
+                bookTitle: String(existingAsin.title || title || "").trim() || "(Untitled)",
+                asin: String(asin),
+                marketplace,
+                oldCode: prevCode,
+                newCode,
+                timestampUtc: formatTimestampUtc(new Date()),
+                dashboardLink
+              });
+              await sendDedupedEmailAlert(userId, asin, "stock_oos", dedupeKey, effectiveEmailRecipient, email.subject, email.text);
             }
 
             if (bsrAlertEnabled) {
@@ -787,16 +956,19 @@ async function logAsinEvent(userId, asinDataId, eventType, description, metadata
                 if (Number.isFinite(pct) && pct >= bsrAlertThresholdPct) {
                   const direction = newBsr < oldBsr ? "DOWN" : "UP";
                   const dedupeKey = `bsr_pct:${asin}:${direction}:${Math.round(bsrAlertThresholdPct)}:${dayKey}`;
-                  const subject = `[KDPInsights] BSR ${direction} ${pct.toFixed(1)}% (${asin})`;
-                  const body = [
-                    `ASIN: ${asin}`,
-                    `Title: ${existingAsin.title || title || ""}`,
-                    `Previous BSR: ${oldBsr}`,
-                    `New BSR: ${newBsr}`,
-                    `Change: ${pct.toFixed(1)}% (threshold ${Number(bsrAlertThresholdPct).toFixed(0)}%)`,
-                    `Time (UTC): ${new Date().toISOString()}`
-                  ].filter(Boolean).join("\n");
-                  await sendDedupedEmailAlert(userId, asin, "bsr_pct", dedupeKey, effectiveEmailRecipient, subject, body);
+                  const email = buildBsrPctEmail({
+                    firstName: profile.firstName,
+                    bookTitle: String(existingAsin.title || title || "").trim() || "(Untitled)",
+                    asin: String(asin),
+                    marketplace,
+                    oldBsr,
+                    newBsr,
+                    pct,
+                    thresholdPct: bsrAlertThresholdPct,
+                    timestampUtc: formatTimestampUtc(new Date()),
+                    dashboardLink
+                  });
+                  await sendDedupedEmailAlert(userId, asin, "bsr_pct", dedupeKey, effectiveEmailRecipient, email.subject, email.text);
                 }
               }
             }

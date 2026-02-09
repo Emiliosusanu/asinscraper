@@ -13,6 +13,165 @@ function isValidEmail(s: any): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
 }
 
+function formatTimestampUtc(d: Date): string {
+  const iso = d.toISOString();
+  return iso.slice(0, 19).replace("T", " ");
+}
+
+function getDashboardLink(req: Request): string {
+  const base = String(Deno.env.get("APP_BASE_URL") || "").trim();
+  if (base) return base.replace(/\/$/, "") + "/";
+  const origin = String(req.headers.get("origin") || "").trim();
+  return origin ? origin.replace(/\/$/, "") + "/" : "";
+}
+
+function renderStockStatusLabel(code: any): string {
+  const c = String(code || "").toUpperCase();
+  const inStockCodes = new Set(["IN_STOCK", "LOW_STOCK", "SHIP_DELAY", "POD", "OTHER_SELLERS", "MADE_TO_ORDER", "AVAILABLE_SOON", "PREORDER"]);
+  const outOfStockCodes = new Set(["OOS", "UNAVAILABLE", "OUT_OF_STOCK"]);
+  if (inStockCodes.has(c)) return "IN STOCK";
+  if (outOfStockCodes.has(c)) return "OUT OF STOCK";
+  return c || "UNKNOWN";
+}
+
+function getMarketplaceDomain(country: string): string {
+  const map: Record<string, string> = {
+    com: "amazon.com",
+    us: "amazon.com",
+    it: "amazon.it",
+    de: "amazon.de",
+    fr: "amazon.fr",
+    es: "amazon.es",
+    "co.uk": "amazon.co.uk",
+    uk: "amazon.co.uk",
+  };
+  return map[String(country || "").toLowerCase()] || map.com;
+}
+
+function buildStockOosEmail(args: {
+  firstName: string | null;
+  bookTitle: string;
+  asin: string;
+  marketplace: string;
+  oldCode: any;
+  newCode: any;
+  timestampUtc: string;
+  dashboardLink: string;
+}): { subject: string; text: string } {
+  const name = args.firstName || "there";
+  const subject = `Out of stock · ${args.bookTitle} · Amazon`;
+  const lines: string[] = [];
+  lines.push(`Hi ${name},`);
+  lines.push("");
+  lines.push("One of your books is currently out of stock on Amazon.");
+  lines.push("");
+  lines.push("Book:");
+  lines.push(args.bookTitle);
+  lines.push(`ASIN: \`${args.asin}\``);
+  lines.push(`Marketplace: ${args.marketplace}`);
+  lines.push("");
+  lines.push("Stock status changed:");
+  lines.push(`${renderStockStatusLabel(args.oldCode)} → ${renderStockStatusLabel(args.newCode)}`);
+  lines.push("");
+  lines.push(`Detected at: ${args.timestampUtc} UTC`);
+  lines.push("");
+  lines.push("If you’re running ads for this ASIN, consider pausing campaigns until availability is restored.");
+  if (args.dashboardLink) {
+    lines.push("");
+    lines.push("Open dashboard:");
+    lines.push(args.dashboardLink);
+  }
+  lines.push("");
+  lines.push("—");
+  lines.push("KDP Insight Bot");
+  lines.push("Automated alert · No reply needed");
+  return { subject, text: lines.join("\n") };
+}
+
+function buildStockChangeEmail(args: {
+  firstName: string | null;
+  bookTitle: string;
+  asin: string;
+  marketplace: string;
+  oldCode: any;
+  newCode: any;
+  timestampUtc: string;
+  dashboardLink: string;
+}): { subject: string; text: string } {
+  const name = args.firstName || "there";
+  const subject = `Stock status update · ${args.bookTitle} · Amazon`;
+  const lines: string[] = [];
+  lines.push(`Hi ${name},`);
+  lines.push("");
+  lines.push("Amazon availability has changed for one of your tracked books.");
+  lines.push("");
+  lines.push("Book:");
+  lines.push(args.bookTitle);
+  lines.push(`ASIN: \`${args.asin}\``);
+  lines.push(`Marketplace: ${args.marketplace}`);
+  lines.push("");
+  lines.push("Stock status:");
+  lines.push(`${renderStockStatusLabel(args.oldCode)} → ${renderStockStatusLabel(args.newCode)}`);
+  lines.push("");
+  lines.push(`Detected at: ${args.timestampUtc} UTC`);
+  lines.push("");
+  lines.push("This email is sent only when availability changes.");
+  if (args.dashboardLink) {
+    lines.push("");
+    lines.push("View book:");
+    lines.push(args.dashboardLink);
+  }
+  lines.push("");
+  lines.push("—");
+  lines.push("KDP Insight Bot");
+  lines.push("Automated alert · No reply needed");
+  return { subject, text: lines.join("\n") };
+}
+
+function buildBsrPctEmail(args: {
+  firstName: string | null;
+  bookTitle: string;
+  asin: string;
+  marketplace: string;
+  oldBsr: number;
+  newBsr: number;
+  pct: number;
+  thresholdPct: number;
+  timestampUtc: string;
+  dashboardLink: string;
+}): { subject: string; text: string } {
+  const name = args.firstName || "there";
+  const pctForSubject = Number.isFinite(args.pct) ? Math.round(args.pct) : 0;
+  const subject = `BSR change ${pctForSubject}% · ${args.bookTitle} · Amazon`;
+  const lines: string[] = [];
+  lines.push(`Hi ${name},`);
+  lines.push("");
+  lines.push("The Best Seller Rank for one of your books changed beyond your alert threshold.");
+  lines.push("");
+  lines.push("Book:");
+  lines.push(args.bookTitle);
+  lines.push(`ASIN: \`${args.asin}\``);
+  lines.push(`Marketplace: ${args.marketplace}`);
+  lines.push("");
+  lines.push("BSR change:");
+  lines.push(`${args.oldBsr} → ${args.newBsr}`);
+  lines.push(`Change: ${args.pct.toFixed(1)}% (threshold ${Math.round(args.thresholdPct)}%)`);
+  lines.push("");
+  lines.push(`Detected at: ${args.timestampUtc} UTC`);
+  lines.push("");
+  lines.push("This may indicate a sales spike, drop, or category movement.");
+  if (args.dashboardLink) {
+    lines.push("");
+    lines.push("View details:");
+    lines.push(args.dashboardLink);
+  }
+  lines.push("");
+  lines.push("—");
+  lines.push("KDP Insight Bot");
+  lines.push("Automated alert · No reply needed");
+  return { subject, text: lines.join("\n") };
+}
+
 function readMailgunEnv() {
   const apiKey = Deno.env.get("MAILGUN_API_KEY") ?? "";
   const domain = Deno.env.get("MAILGUN_DOMAIN") ?? "";
@@ -192,61 +351,95 @@ serve(async (req: Request) => {
     const bsrAlertEnabled = !!settings?.bsr_alert_enabled;
     const bsrAlertThresholdPct = Number.isFinite(Number(settings?.bsr_alert_threshold_pct)) ? Number(settings?.bsr_alert_threshold_pct) : 20;
 
-    const now = new Date().toISOString();
-    const subject = "[KDPInsights] Test email (sample alerts)";
-    const lines: string[] = [];
-    lines.push("This is a test email from KDPInsights.");
-    lines.push(`Time (UTC): ${now}`);
-    lines.push("");
-    lines.push("Alert settings (current):");
-    lines.push(`- Recipient override: ${isValidEmail(recipientFromSettings) ? recipientFromSettings : "(none)"}`);
-    lines.push(`- Stock (Out of stock): ${stockAlertEnabled ? "ON" : "OFF"}`);
-    lines.push(`- Stock (Any change): ${stockAlertOnChange ? "ON" : "OFF"}`);
-    lines.push(`- BSR change %: ${bsrAlertEnabled ? `ON (threshold ${bsrAlertThresholdPct}%)` : "OFF"}`);
-    lines.push("");
-    lines.push("Sample alerts (examples):");
+    const dashboardLink = getDashboardLink(req);
+    const ts = formatTimestampUtc(new Date());
 
-    let anySample = false;
-    if (stockAlertOnChange) {
-      anySample = true;
-      lines.push("");
-      lines.push("---");
-      lines.push("[Example] Stock changed (Any change)");
-      lines.push("ASIN: B0TESTSTOCK");
-      lines.push("Title: Example Book Title");
-      lines.push("Previous: IN_STOCK");
-      lines.push("Now: SHIP_DELAY");
-      lines.push(`Time (UTC): ${now}`);
+    const meta = (userData.user as any)?.user_metadata || {};
+    const rawName = String(meta?.first_name || meta?.full_name || "").trim();
+    const firstName = rawName ? rawName.split(/\s+/)[0] : (email ? String(email).split("@")[0] : null);
+
+    let book: { asin: string; title: string; country: string } | null = null;
+    try {
+      const { data } = await supabaseUser
+        .from("asin_data")
+        .select("asin, title, country")
+        .eq("user_id", userData.user.id)
+        .limit(1);
+      if (Array.isArray(data) && data.length) {
+        book = {
+          asin: String((data[0] as any)?.asin || ""),
+          title: String((data[0] as any)?.title || "").trim(),
+          country: String((data[0] as any)?.country || "com").toLowerCase(),
+        };
+      }
+    } catch (_e) {
+      book = null;
     }
+
+    const asin = book?.asin || "B0TEST";
+    const bookTitle = book?.title || "Example Book Title";
+    const marketplace = getMarketplaceDomain(book?.country || "com");
+
+    let subject = "";
+    let text = "";
+
     if (stockAlertEnabled) {
-      anySample = true;
-      lines.push("");
-      lines.push("---");
-      lines.push("[Example] Out of stock");
-      lines.push("ASIN: B0TESTOOS");
-      lines.push("Title: Example Book Title");
-      lines.push("Previous: IN_STOCK");
-      lines.push("Now: OOS");
-      lines.push(`Time (UTC): ${now}`);
+      const emailTpl = buildStockOosEmail({
+        firstName,
+        bookTitle,
+        asin,
+        marketplace,
+        oldCode: "IN_STOCK",
+        newCode: "OOS",
+        timestampUtc: ts,
+        dashboardLink,
+      });
+      subject = emailTpl.subject;
+      text = emailTpl.text;
+    } else if (stockAlertOnChange) {
+      const emailTpl = buildStockChangeEmail({
+        firstName,
+        bookTitle,
+        asin,
+        marketplace,
+        oldCode: "IN_STOCK",
+        newCode: "SHIP_DELAY",
+        timestampUtc: ts,
+        dashboardLink,
+      });
+      subject = emailTpl.subject;
+      text = emailTpl.text;
+    } else if (bsrAlertEnabled) {
+      const oldBsr = 12000;
+      const newBsr = 18000;
+      const pct = Math.abs((newBsr - oldBsr) / oldBsr) * 100;
+      const emailTpl = buildBsrPctEmail({
+        firstName,
+        bookTitle,
+        asin,
+        marketplace,
+        oldBsr,
+        newBsr,
+        pct,
+        thresholdPct: bsrAlertThresholdPct,
+        timestampUtc: ts,
+        dashboardLink,
+      });
+      subject = emailTpl.subject;
+      text = emailTpl.text;
+    } else {
+      const fallbackLines: string[] = [];
+      fallbackLines.push(`Hi ${firstName || "there"},`);
+      fallbackLines.push("");
+      fallbackLines.push("No alert conditions are enabled.");
+      fallbackLines.push("Enable at least one condition in Settings → Automation.");
+      fallbackLines.push("");
+      fallbackLines.push("—");
+      fallbackLines.push("KDP Insight Bot");
+      fallbackLines.push("Automated alert · No reply needed");
+      subject = `Stock status update · ${bookTitle} · Amazon`;
+      text = fallbackLines.join("\n");
     }
-    if (bsrAlertEnabled) {
-      anySample = true;
-      lines.push("");
-      lines.push("---");
-      lines.push("[Example] BSR change %");
-      lines.push("ASIN: B0TESTBSR");
-      lines.push("Title: Example Book Title");
-      lines.push("Previous BSR: 12000");
-      lines.push("New BSR: 18000");
-      lines.push(`Change: 50.0% (threshold ${Number(bsrAlertThresholdPct).toFixed(0)}%)`);
-      lines.push(`Time (UTC): ${now}`);
-    }
-    if (!anySample) {
-      lines.push("");
-      lines.push("No alert conditions are enabled. Enable at least one condition in Settings → Automation.");
-    }
-
-    const text = lines.join("\n");
 
     const sent = await sendMailgunEmail(effectiveRecipient, subject, text);
     if (!sent.ok) {
