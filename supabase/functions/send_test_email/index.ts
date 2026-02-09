@@ -5,6 +5,7 @@ declare const Deno: any;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
 function readMailgunEnv() {
   const apiKey = Deno.env.get("MAILGUN_API_KEY") ?? "";
@@ -73,8 +74,12 @@ serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      return new Response(JSON.stringify({ success: false, error: "Missing Supabase env" }), {
+    if (!SUPABASE_URL || (!SUPABASE_SERVICE_ROLE_KEY && !SUPABASE_ANON_KEY)) {
+      const missing: string[] = [];
+      if (!SUPABASE_URL) missing.push("SUPABASE_URL");
+      if (!SUPABASE_SERVICE_ROLE_KEY && !SUPABASE_ANON_KEY) missing.push("SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY");
+
+      return new Response(JSON.stringify({ success: false, error: `Missing Supabase env: ${missing.join(", ")}` }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -88,7 +93,8 @@ serve(async (req: Request) => {
       });
     }
 
-    const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    const supabaseKey = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
+    const supabaseAdmin = createClient(SUPABASE_URL, supabaseKey, {
       auth: { persistSession: false },
     });
 
