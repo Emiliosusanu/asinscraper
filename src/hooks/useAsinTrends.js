@@ -312,19 +312,23 @@ const useAsinTrends = (asins) => {
       }
 
       // Compute QI score from BSR range, ignoring sub-1000 values as unrealistic (launch spikes)
-      const currBsr = (Number.isFinite(Number(asin.bsr)) && Number(asin.bsr) > 0)
+      const REAL_BSR_MIN = 1000;
+      const isRealBsr = (v) => Number.isFinite(Number(v)) && Number(v) >= REAL_BSR_MIN;
+      const currBsr = isRealBsr(asin.bsr)
         ? Number(asin.bsr)
-        : (Number.isFinite(Number(current?.bsr)) && Number(current?.bsr) > 0 ? Number(current?.bsr) : null);
+        : (isRealBsr(current?.bsr) ? Number(current?.bsr) : null);
       const dbRange = bsrRangesByAsin?.[asin.id] || null;
-      let minEver = (dbRange && Number.isFinite(dbRange.min) && dbRange.min > 0) ? dbRange.min : null;
-      let maxEver = (dbRange && Number.isFinite(dbRange.max) && dbRange.max > 0) ? dbRange.max : null;
+      let minEver = (dbRange && isRealBsr(dbRange.min)) ? Number(dbRange.min) : null;
+      let maxEver = (dbRange && isRealBsr(dbRange.max)) ? Number(dbRange.max) : null;
       if (!Number.isFinite(minEver) || !Number.isFinite(maxEver)) {
-        const bsrVals = (allHistory || []).map((r) => Number(r.bsr)).filter((v) => Number.isFinite(v) && v > 0);
-        if (Number.isFinite(currBsr) && currBsr > 0) bsrVals.push(currBsr);
+        const bsrVals = (allHistory || [])
+          .map((r) => Number(r.bsr))
+          .filter((v) => isRealBsr(v));
+        if (isRealBsr(currBsr)) bsrVals.push(currBsr);
         minEver = bsrVals.length ? Math.min(...bsrVals) : null;
         maxEver = bsrVals.length ? Math.max(...bsrVals) : null;
       }
-      if (Number.isFinite(currBsr) && currBsr > 0) {
+      if (isRealBsr(currBsr)) {
         if (Number.isFinite(minEver) && currBsr < minEver) minEver = currBsr;
         if (Number.isFinite(maxEver) && currBsr > maxEver) maxEver = currBsr;
       }

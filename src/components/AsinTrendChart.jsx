@@ -124,51 +124,57 @@ const AsinTrendChart = ({ asinData, onClose }) => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchHistory = async () => {
       setLoading(true);
-      
-      let query = supabase
-        .from('asin_history')
-        .select('created_at, bsr, review_count, price')
-        .eq('asin_data_id', asinData.id);
+      try {
+        let query = supabase
+          .from('asin_history')
+          .select('created_at, bsr, review_count, price')
+          .eq('asin_data_id', asinData.id);
 
-      if (dateRange?.from) {
-        query = query.gte('created_at', dateRange.from.toISOString());
+        if (dateRange?.from) {
+          query = query.gte('created_at', dateRange.from.toISOString());
+        }
+        if (dateRange?.to) {
+          query = query.lte('created_at', dateRange.to.toISOString());
+        }
+
+        query = query.order('created_at', { ascending: true });
+
+        const { data, error } = await query;
+
+        if (error) {
+          console.error('Error fetching history:', error);
+          if (!cancelled) setHistory([]);
+        } else {
+          const formattedData = (Array.isArray(data) ? data : []).map(item => {
+            const d = new Date(item.created_at);
+            const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            const label = d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
+            const time = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+            return {
+              dateKey,
+              date: label,
+              BSR: Number(item.bsr),
+              Recensioni: Number(item.review_count),
+              Prezzo: Number(item.price),
+              time,
+              ts: d.getTime(),
+            };
+          });
+          if (!cancelled) setHistory(formattedData);
+        }
+      } catch (e) {
+        console.error('fetchHistory failed:', e);
+        if (!cancelled) setHistory([]);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      if (dateRange?.to) {
-        query = query.lte('created_at', dateRange.to.toISOString());
-      }
-
-      query = query.order('created_at', { ascending: true });
-
-      const { data, error } = await query;
-
-      if (error) {
-        console.error('Error fetching history:', error);
-      } else {
-        const formattedData = data.map(item => {
-          const d = new Date(item.created_at);
-          const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-          const label = d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
-          const time = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-          return {
-            dateKey,
-            date: label,
-            BSR: Number(item.bsr),
-            Recensioni: Number(item.review_count),
-            Prezzo: Number(item.price),
-            time,
-            ts: d.getTime(),
-          };
-        });
-        setHistory(formattedData);
-      }
-      setLoading(false);
     };
 
-    if (asinData) {
-      fetchHistory();
-    }
+    if (asinData) fetchHistory();
+    return () => { cancelled = true; };
   }, [asinData, dateRange]);
 
   useEffect(() => {

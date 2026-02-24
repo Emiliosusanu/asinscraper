@@ -40,7 +40,7 @@ const BsrTrendSparkline = ({ values, overall, title = null, width = 42, height =
   const len = Math.max(0.0001, Math.hypot(dx, dy));
   const ux = dx / len;
   const uy = dy / len;
-  const arrowLen = 5.5;
+  const arrowLen = Math.max(3, Math.min(5.5, Math.min(innerW, innerH) * 0.55));
   const angle = Math.PI / 6; // 30deg
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
@@ -48,10 +48,11 @@ const BsrTrendSparkline = ({ values, overall, title = null, width = 42, height =
   const ry1 = ux * sin + uy * cos;
   const rx2 = ux * cos + uy * sin;
   const ry2 = -ux * sin + uy * cos;
-  const a1x = last.x - rx1 * arrowLen;
-  const a1y = last.y - ry1 * arrowLen;
-  const a2x = last.x - rx2 * arrowLen;
-  const a2y = last.y - ry2 * arrowLen;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const a1x = clamp(last.x - rx1 * arrowLen, pad, w - pad);
+  const a1y = clamp(last.y - ry1 * arrowLen, pad, h - pad);
+  const a2x = clamp(last.x - rx2 * arrowLen, pad, w - pad);
+  const a2y = clamp(last.y - ry2 * arrowLen, pad, h - pad);
 
   return (
     <svg
@@ -59,7 +60,7 @@ const BsrTrendSparkline = ({ values, overall, title = null, width = 42, height =
       height={h}
       viewBox={`0 0 ${w} ${h}`}
       className="block"
-      style={{ opacity: strokeOpacity }}
+      style={{ opacity: strokeOpacity, overflow: 'visible' }}
       title={title || undefined}
     >
       <polyline

@@ -80,9 +80,19 @@ const AsinListItem = ({ data, trend, snapshot, onRefresh, onDelete, onShowChart,
   const stockTextLower = stockTextRaw.toLowerCase();
   const inStockExactRx = /^\s*(in\s*stock\s*\.?|disponibile\s*(subito)?\s*\.?|en\s*stock\s*\.?|auf\s*lager\s*\.?)\s*$/i;
   const shipDelayRx = /(available\s*to\s*ship|usually\s*ships|ships\s*within|available\s*to\s*ship\s*in|spedizione|disponibile\s*tra|verf\u00fcgbar|exp\u00e9dition\s*sous|disponible\s*en)/i;
-  const isInStock = availability ? (availability === 'IN_STOCK') : inStockExactRx.test(stockTextRaw);
+  const outOfStockTextRx = /(out\s*of\s*stock|currently\s*unavailable|temporarily\s*out\s*of\s*stock|non\s*disponibile|non\s*disponibile\s*al\s*momento|momentaneamente\s*non\s*disponibile|indisponibile|nicht\s*verf(?:u|\u00fc)gbar|derzeit\s*nicht\s*verf(?:u|\u00fc)gbar|agotado|no\s*disponible)/i;
+
+  const inStockCodes = new Set(['IN_STOCK', 'LOW_STOCK', 'SHIP_DELAY', 'OTHER_SELLERS', 'AVAILABLE_SOON', 'POD', 'PREORDER', 'MADE_TO_ORDER']);
+  const outOfStockCodes = new Set(['OOS', 'OUT_OF_STOCK', 'UNAVAILABLE']);
+
   const isLowStock = availability === 'LOW_STOCK';
   const isShipDelay = availability ? (availability === 'SHIP_DELAY' || availability === 'AVAILABLE_SOON') : shipDelayRx.test(stockTextLower);
+  const isInStock = availability
+    ? inStockCodes.has(availability)
+    : (inStockExactRx.test(stockTextRaw) || shipDelayRx.test(stockTextLower));
+  const isOutOfStock = availability
+    ? outOfStockCodes.has(availability)
+    : outOfStockTextRx.test(stockTextLower);
   // performance snapshot chips hidden per request
   const sales = calculateSalesFromBsr(data.bsr);
   const effectiveRoyalty = (data.royalty && data.royalty > 0) ? data.royalty : estimateRoyalty(data);

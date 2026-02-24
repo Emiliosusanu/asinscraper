@@ -57,6 +57,27 @@ const OUT_OF_STOCK_CODES = new Set([
   'UNAVAILABLE',
 ]);
 
+const inStockExactRx = /^\s*(in\s*stock\s*\.?|disponibile\s*(subito)?\s*\.?|en\s*stock\s*\.?|auf\s*lager\s*\.?)\s*$/i;
+const shipDelayRx = /(available\s*to\s*ship|usually\s*ships|ships\s*within|available\s*to\s*ship\s*in|spedizione|disponibile\s*tra|verf\u00fcgbar|exp\u00e9dition\s*sous|disponible\s*en)/i;
+const outOfStockTextRx = /(out\s*of\s*stock|currently\s*unavailable|temporarily\s*out\s*of\s*stock|non\s*disponibile|non\s*disponibile\s*al\s*momento|momentaneamente\s*non\s*disponibile|indisponibile|nicht\s*verf(?:u|\u00fc)gbar|derzeit\s*nicht\s*verf(?:u|\u00fc)gbar|agotado|no\s*disponible)/i;
+
+function classifyAvailability(item) {
+  const code = String(item?.availability_code || '').toUpperCase();
+  if (code) {
+    if (IN_STOCK_CODES.has(code)) return 'in';
+    if (OUT_OF_STOCK_CODES.has(code)) return 'oos';
+    return 'other';
+  }
+
+  const stockTextRaw = String(item?.stock_status || '').trim();
+  const stockTextLower = stockTextRaw.toLowerCase();
+  if (!stockTextRaw) return 'other';
+  if (inStockExactRx.test(stockTextRaw)) return 'in';
+  if (shipDelayRx.test(stockTextLower)) return 'in';
+  if (outOfStockTextRx.test(stockTextLower)) return 'oos';
+  return 'other';
+}
+
 function getBookCounts(items) {
   const list = Array.isArray(items) ? items : [];
   const total = list.length;
@@ -65,13 +86,9 @@ function getBookCounts(items) {
   let other = 0;
 
   for (const a of list) {
-    const code = String(a?.availability_code || '').toUpperCase();
-    if (!code) {
-      other++;
-      continue;
-    }
-    if (IN_STOCK_CODES.has(code)) inStock++;
-    else if (OUT_OF_STOCK_CODES.has(code)) outOfStock++;
+    const cls = classifyAvailability(a);
+    if (cls === 'in') inStock++;
+    else if (cls === 'oos') outOfStock++;
     else other++;
   }
 
@@ -211,7 +228,7 @@ const AsinMonitoring = () => {
   const refreshTrendsRef = useRef(refreshTrends);
   const fetchTrackedAsinsRef = useRef(null);
   const toastCooldownRef = useRef(new Map()); // asin_id -> lastToastTs
-  const [poolReviews7d, setPoolReviews7d] = useState({ gained: 0, lost: 0 });
+  const [poolReviews14d, setPoolReviews14d] = useState({ gained: 0, lost: 0 });
   const computeReviewsRef = useRef(null);
   const loadTopBooksMonthRef = useRef(null);
 
@@ -254,20 +271,30 @@ const AsinMonitoring = () => {
   }, [trackedAsins, trends]);
 
   const fetchTrackedAsins = useCallback(async () => {
-    if (!user) return;
-    setIsLoading(true);
-    const { data, error } = await supabase
-      .from('asin_data')
-      .select('*')
-      .eq('user_id', user.id);
-
-    if (error) {
-      toast({ title: 'Errore nel caricare gli ASIN', description: error.message, variant: 'destructive' });
-    } else {
-      setTrackedAsins(data);
+    if (!user?.id) {
+      setTrackedAsins([]);
+      setIsLoading(false);
+      return;
     }
-    setIsLoading(false);
-  }, [user]);
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('asin_data')
+        .select('*')
+        .eq('user_id', user.id);
+
+      if (error) {
+        toast({ title: 'Errore nel caricare gli ASIN', description: error.message, variant: 'destructive' });
+      } else {
+        setTrackedAsins(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.error('fetchTrackedAsins failed:', e);
+      toast({ title: 'Errore nel caricare gli ASIN', description: 'Riprova tra poco.', variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user?.id]);
 
   // Keep refs updated after functions are defined
   useEffect(() => { refreshTrendsRef.current = refreshTrends; }, [refreshTrends]);
@@ -498,17 +525,17 @@ useEffect(() => {
   const bookCounts = showArchived ? bookCountsAll.archived : bookCountsAll.active;
   const otherGroupCounts = showArchived ? bookCountsAll.active : bookCountsAll.archived;
 
-  const computePoolReviews7d = useCallback(async () => {
-    if (!user) return setPoolReviews7d({ gained: 0, lost: 0 });
+  const computePoolReviews14d = useCallback(async () => {
+    if (!user) return setPoolReviews14d({ gained: 0, lost: 0 });
     const items = (trackedAsins || []).filter(a => (showArchived ? a.archived === true : a.archived !== true));
     const ids = items.map(a => a.id);
-    if (!ids.length) { setPoolReviews7d({ gained: 0, lost: 0 }); return; }
+    if (!ids.length) { setPoolReviews14d({ gained: 0, lost: 0 }); return; }
     const now = new Date();
-    const from = new Date(now); from.setDate(now.getDate() - 7);
+    const from = new Date(now); from.setDate(now.getDate() - 14);
     const startIso = from.toISOString();
     let gained = 0;
     let lost = 0;
-    const chunkSize = 10;
+    const chunkSize = 6;
     for (let i = 0; i < items.length; i += chunkSize) {
       const chunk = items.slice(i, i + chunkSize);
       const deltas = await Promise.all(
@@ -517,36 +544,52 @@ useEffect(() => {
           if (!Number.isFinite(current) || current <= 0) return { gained: 0, lost: 0 };
 
           let baseline = null;
-          const { data: baseRow, error: baseErr } = await supabase
-            .from('asin_history')
-            .select('review_count, created_at')
-            .eq('asin_data_id', a.id)
-            .lte('created_at', startIso)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+          try {
+            const { data: baseRow, error: baseErr } = await supabase
+              .from('asin_history')
+              .select('review_count, created_at')
+              .eq('asin_data_id', a.id)
+              .lte('created_at', startIso)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (!baseErr && baseRow && Number.isFinite(Number(baseRow.review_count))) {
+              baseline = Number(baseRow.review_count);
+            }
+          } catch (_) {}
 
-          if (!baseErr && baseRow && Number.isFinite(Number(baseRow.review_count))) {
-            baseline = Number(baseRow.review_count);
-          } else {
-            const { data: firstRow, error: firstErr } = await supabase
+          let points = [];
+          try {
+            const { data: rows } = await supabase
               .from('asin_history')
               .select('review_count, created_at')
               .eq('asin_data_id', a.id)
               .gte('created_at', startIso)
               .order('created_at', { ascending: true })
-              .limit(1)
-              .maybeSingle();
-            if (!firstErr && firstRow && Number.isFinite(Number(firstRow.review_count))) {
-              baseline = Number(firstRow.review_count);
-            }
+              .limit(250);
+            points = Array.isArray(rows) ? rows : [];
+          } catch (_) {
+            points = [];
           }
 
-          if (!Number.isFinite(Number(baseline)) || Number(baseline) <= 0) return { gained: 0, lost: 0 };
-          const d = current - Number(baseline);
-          if (d > 0) return { gained: d, lost: 0 };
-          if (d < 0) return { gained: 0, lost: -d };
-          return { gained: 0, lost: 0 };
+          const seq = [];
+          if (Number.isFinite(Number(baseline)) && Number(baseline) > 0) seq.push(Number(baseline));
+          for (const r of points) {
+            const v = Number(r?.review_count);
+            if (Number.isFinite(v) && v > 0) seq.push(v);
+          }
+          if (!seq.length) return { gained: 0, lost: 0 };
+          if (Number.isFinite(current) && current > 0 && current !== seq[seq.length - 1]) seq.push(current);
+
+          let g = 0;
+          let l = 0;
+          for (let j = 1; j < seq.length; j++) {
+            const d = Number(seq[j]) - Number(seq[j - 1]);
+            if (!Number.isFinite(d) || d === 0) continue;
+            if (d > 0) g += d;
+            else l += -d;
+          }
+          return { gained: g, lost: l };
         })
       );
       for (const d of deltas) {
@@ -554,11 +597,11 @@ useEffect(() => {
         lost += Number(d?.lost) || 0;
       }
     }
-    setPoolReviews7d({ gained, lost });
+    setPoolReviews14d({ gained, lost });
   }, [trackedAsins, showArchived, user]);
 
-  useEffect(() => { computeReviewsRef.current = computePoolReviews7d; }, [computePoolReviews7d]);
-  useEffect(() => { computePoolReviews7d(); }, [computePoolReviews7d]);
+  useEffect(() => { computeReviewsRef.current = computePoolReviews14d; }, [computePoolReviews14d]);
+  useEffect(() => { computePoolReviews14d(); }, [computePoolReviews14d]);
   
   const handleAddAsin = async (asin, country) => {
     setIsAdding(true);
@@ -748,8 +791,8 @@ const handleRefreshAll = async () => {
           <div className="relative min-w-0 pr-2 sm:pr-0 overflow-x-hidden overflow-y-visible">
             <div className="sm:hidden flex items-center gap-2 min-w-0">
               {(() => {
-                const gained = Number(poolReviews7d.gained) || 0;
-                const lost = Number(poolReviews7d.lost) || 0;
+                const gained = Number(poolReviews14d.gained) || 0;
+                const lost = Number(poolReviews14d.lost) || 0;
                 const fmt = (n) => new Intl.NumberFormat('it-IT').format(Math.abs(n));
                 const qi = portfolioQi ? Math.round(portfolioQi.avg) : null;
                 return (
@@ -778,9 +821,9 @@ const handleRefreshAll = async () => {
 
                     <div
                       className="flex-1 min-w-0 overflow-hidden flex items-center gap-1 h-10 px-2 rounded-full border border-white/10 bg-white/[0.04] shadow-[0_10px_26px_rgba(0,0,0,0.25),0_0_0_1px_rgba(255,255,255,0.04)_inset]"
-                      title="Recensioni ultimi 7 giorni"
+                      title="Recensioni ultimi 14 giorni"
                     >
-                      <span className="shrink-0 text-xs font-semibold tracking-wide text-muted-foreground/80">7G</span>
+                      <span className="shrink-0 text-xs font-semibold tracking-wide text-muted-foreground/80">14G</span>
                       <span className={`min-w-0 flex-1 truncate inline-flex items-center justify-center h-7 px-2 rounded-full border text-xs font-semibold tabular-nums ${gained > 0 ? 'text-emerald-200 bg-emerald-500/15 border-emerald-500/25 shadow-[0_0_18px_rgba(16,185,129,0.18)]' : 'text-slate-200 bg-black/20 border-white/10'}`}>{gained > 0 ? `+${fmt(gained)}` : '0'}</span>
                       <span className={`min-w-0 flex-1 truncate inline-flex items-center justify-center h-7 px-2 rounded-full border text-xs font-semibold tabular-nums ${lost > 0 ? 'text-red-200 bg-red-500/15 border-red-500/25 shadow-[0_0_18px_rgba(239,68,68,0.16)]' : 'text-slate-200 bg-black/20 border-white/10'}`}>{lost > 0 ? `-${fmt(lost)}` : '0'}</span>
                     </div>
@@ -816,12 +859,12 @@ const handleRefreshAll = async () => {
             </div>
             <div
               className="shrink-0 flex items-center gap-2.5 px-3 py-1.5 rounded-full border border-white/10 bg-gradient-to-r from-white/[0.06] to-white/[0.03] shadow-[0_0_0_1px_rgba(255,255,255,0.04)_inset] hover:border-white/20 transition-colors"
-              title="Recensioni ultimi 7 giorni"
+              title="Recensioni ultimi 14 giorni"
             >
-              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80">Recensioni 7g</span>
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/80">Recensioni 14g</span>
               {(() => {
-                const gained = Number(poolReviews7d.gained) || 0;
-                const lost = Number(poolReviews7d.lost) || 0;
+                const gained = Number(poolReviews14d.gained) || 0;
+                const lost = Number(poolReviews14d.lost) || 0;
                 const fmt = (n) => new Intl.NumberFormat('it-IT').format(Math.abs(n));
                 return (
                   <>
