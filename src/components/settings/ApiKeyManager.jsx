@@ -24,7 +24,7 @@ const ApiKeyManager = () => {
     setIsLoading(true);
     const { data, error } = await supabase
       .from('scraper_api_keys')
-      .select('*')
+      .select('id, user_id, api_key, service_name, status, credits, max_credits, cost_per_call, success_count, failure_count, last_reset_at, cooldown_until, created_at, updated_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: true });
 
@@ -50,7 +50,7 @@ const ApiKeyManager = () => {
       }
       const { data: refreshed } = await supabase
         .from('scraper_api_keys')
-        .select('*')
+        .select('id, user_id, api_key, service_name, status, credits, max_credits, cost_per_call, success_count, failure_count, last_reset_at, cooldown_until, created_at, updated_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: true });
       const rows = Array.isArray(refreshed) ? refreshed : (Array.isArray(data) ? data : []);

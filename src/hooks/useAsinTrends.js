@@ -30,6 +30,10 @@ const useAsinTrends = (asins) => {
     setIsLoading(true);
     const asinIds = asins.map(a => a.id);
 
+    const historySince = new Date();
+    historySince.setDate(historySince.getDate() - 70);
+    const historySinceIso = historySince.toISOString();
+
     let bsrRangesByAsin = {};
     try {
       const { data: rangesData } = await supabase.rpc('get_asin_bsr_ranges', { asin_ids: asinIds });
@@ -50,6 +54,7 @@ const useAsinTrends = (asins) => {
       .from('asin_history')
       .select('asin_data_id, bsr, review_count, created_at, price')
       .in('asin_data_id', asinIds)
+      .gte('created_at', historySinceIso)
       .order('created_at', { ascending: false });
 
     if (error) {

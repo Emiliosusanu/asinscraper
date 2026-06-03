@@ -43,7 +43,7 @@ export default function usePerformanceSnapshots(asinRows) {
       channelRef.current = null;
     }
     const ch = supabase.channel(`realtime-perf-snapshots:${user.id}`);
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'performance_snapshots' }, (payload) => {
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'performance_snapshots', filter: `user_id=eq.${user.id}` }, (payload) => {
       const row = payload.new || payload.record || null;
       if (!row || row.user_id !== user.id) return;
       if (row.day !== today) return;

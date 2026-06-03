@@ -156,13 +156,24 @@ export const scrapeAndProcessAsin = async (asinToScrape, countryCode, user, opts
     // Read back full row (baseline returns only a subset of columns)
     let fullRow = processedData;
     try {
+      const cols = 'id, user_id, asin, country, title, author, image_url, bsr, rating, review_count, price, royalty, availability_code, stock_status, archived, created_at, updated_at, is_bestseller, is_great_on_kindle, page_count, interior_type, dimensions_raw, trim_size, publication_date';
       const { data: row, error: rowErr } = await supabase
         .from('asin_data')
-        .select('*')
+        .select(cols)
         .eq('user_id', user.id)
         .eq('asin', asinToScrape)
         .single();
-      if (!rowErr && row) fullRow = row;
+      if (rowErr && /column .* does not exist/i.test(String(rowErr?.message || ''))) {
+        const { data: row2, error: rowErr2 } = await supabase
+          .from('asin_data')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('asin', asinToScrape)
+          .single();
+        if (!rowErr2 && row2) fullRow = row2;
+      } else if (!rowErr && row) {
+        fullRow = row;
+      }
     } catch (_) {}
 
     if (!suppressToast) {
@@ -238,13 +249,24 @@ export async function processAllAsins(
             const sanitizedData = sanitize(data?.data || null);
             let fullRow = sanitizedData;
             try {
+              const cols = 'id, user_id, asin, country, title, author, image_url, bsr, rating, review_count, price, royalty, availability_code, stock_status, archived, created_at, updated_at, is_bestseller, is_great_on_kindle, page_count, interior_type, dimensions_raw, trim_size, publication_date';
               const { data: row, error: rowErr } = await supabase
                 .from('asin_data')
-                .select('*')
+                .select(cols)
                 .eq('user_id', userId)
                 .eq('asin', asin)
                 .single();
-              if (!rowErr && row) fullRow = row;
+              if (rowErr && /column .* does not exist/i.test(String(rowErr?.message || ''))) {
+                const { data: row2, error: rowErr2 } = await supabase
+                  .from('asin_data')
+                  .select('*')
+                  .eq('user_id', userId)
+                  .eq('asin', asin)
+                  .single();
+                if (!rowErr2 && row2) fullRow = row2;
+              } else if (!rowErr && row) {
+                fullRow = row;
+              }
             } catch (_) {}
             onProgress?.({ asin, ok: true, data: fullRow });
             return { asin, ok: true, data: fullRow };
@@ -313,13 +335,24 @@ export async function processAllAsins(
         const sanitizedData = sanitize(data?.data || null);
         let fullRow = sanitizedData;
         try {
+          const cols = 'id, user_id, asin, country, title, author, image_url, bsr, rating, review_count, price, royalty, availability_code, stock_status, archived, created_at, updated_at, is_bestseller, is_great_on_kindle, page_count, interior_type, dimensions_raw, trim_size, publication_date';
           const { data: row, error: rowErr } = await supabase
             .from('asin_data')
-            .select('*')
+            .select(cols)
             .eq('user_id', userId)
             .eq('asin', job.asin)
             .single();
-          if (!rowErr && row) fullRow = row;
+          if (rowErr && /column .* does not exist/i.test(String(rowErr?.message || ''))) {
+            const { data: row2, error: rowErr2 } = await supabase
+              .from('asin_data')
+              .select('*')
+              .eq('user_id', userId)
+              .eq('asin', job.asin)
+              .single();
+            if (!rowErr2 && row2) fullRow = row2;
+          } else if (!rowErr && row) {
+            fullRow = row;
+          }
         } catch (_) {}
         onProgress?.({ asin: job.asin, ok: true, data: fullRow });
         results.set(job.asin, fullRow);

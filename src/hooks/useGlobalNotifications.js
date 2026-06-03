@@ -71,13 +71,13 @@ export default function useGlobalNotifications() {
       chRef.current = null;
     }
     const ch = supabase.channel(`realtime-global-notifs:${user.id}`);
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'performance_snapshots' }, (payload) => {
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'performance_snapshots', filter: `user_id=eq.${user.id}` }, (payload) => {
       const row = payload.new || payload.record || null;
       if (!row || row.user_id !== user.id) return;
       if (row.day !== today) return;
       loadAndStore();
     });
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'notification_events' }, (payload) => {
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'notification_events', filter: `user_id=eq.${user.id}` }, (payload) => {
       const row = payload.new || payload.record || null;
       if (!row || row.user_id !== user.id) return;
       loadAndStore();

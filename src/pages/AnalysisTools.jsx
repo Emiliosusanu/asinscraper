@@ -207,7 +207,7 @@ const MarketAnalysis = () => {
       try {
         const { data: asinsData, error: asinsError } = await supabase
           .from('asin_data')
-          .select('*')
+          .select('id, asin, title, country, image_url')
           .eq('user_id', user.id);
 
         if (asinsError) throw asinsError;
@@ -219,7 +219,7 @@ const MarketAnalysis = () => {
 
         const { data: historyData, error: historyError } = await supabase
           .from('asin_history')
-          .select('*')
+          .select('asin_data_id, created_at, bsr')
           .in('asin_data_id', asinIds)
           .gte('created_at', thirtyDaysAgo.toISOString());
 

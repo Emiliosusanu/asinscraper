@@ -62,7 +62,7 @@ const AsinEventLogModal = ({ asinData, isOpen, onClose }) => {
       setIsLoading(true);
       const { data, error } = await supabase
         .from('asin_events')
-        .select('*')
+        .select('id, event_type, description, metadata, created_at')
         .eq('asin_data_id', asinData.id)
         .order('created_at', { ascending: false })
         .limit(100);

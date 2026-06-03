@@ -232,6 +232,20 @@ const AsinMonitoring = () => {
   const computeReviewsRef = useRef(null);
   const loadTopBooksMonthRef = useRef(null);
 
+  const trackedAsinsRef = useRef(trackedAsins);
+  useEffect(() => { trackedAsinsRef.current = trackedAsins; }, [trackedAsins]);
+
+  const refreshTrendsDebounceRef = useRef(null);
+  const scheduleRefreshTrends = useCallback((delayMs = 2500) => {
+    try {
+      if (refreshTrendsDebounceRef.current) clearTimeout(refreshTrendsDebounceRef.current);
+      refreshTrendsDebounceRef.current = setTimeout(() => {
+        refreshTrendsDebounceRef.current = null;
+        refreshTrendsRef.current?.();
+      }, delayMs);
+    } catch (_) {}
+  }, []);
+
   const upsertTrackedAsin = useCallback((row, { prepend = false } = {}) => {
     if (!row) return;
     setTrackedAsins(curr => {
@@ -278,10 +292,18 @@ const AsinMonitoring = () => {
     }
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
+      const cols = 'id, user_id, asin, country, title, author, image_url, bsr, rating, review_count, price, royalty, availability_code, stock_status, archived, created_at, updated_at, is_bestseller, is_great_on_kindle, page_count, interior_type, dimensions_raw, trim_size, publication_date';
+      let { data, error } = await supabase
         .from('asin_data')
-        .select('*')
+        .select(cols)
         .eq('user_id', user.id);
+
+      if (error && /column .* does not exist/i.test(String(error?.message || ''))) {
+        ({ data, error } = await supabase
+          .from('asin_data')
+          .select('*')
+          .eq('user_id', user.id));
+      }
 
       if (error) {
         toast({ title: 'Errore nel caricare gli ASIN', description: error.message, variant: 'destructive' });
@@ -379,7 +401,7 @@ useEffect(() => {
   // 1) asin_data: INSERT / UPDATE / DELETE
   channel.on(
     'postgres_changes',
-    { event: '*', schema: 'public', table: 'asin_data' }, // no server-side filter
+    { event: '*', schema: 'public', table: 'asin_data', filter: `user_id=eq.${user.id}` }, // no server-side filter
     (payload) => {
       // filter by user on the client so UPDATEs are always delivered
       const recNew = payload.new || payload.record || null;
@@ -399,18 +421,29 @@ useEffect(() => {
         setTrackedAsins(curr => curr.filter(a => a.id !== payload.old.id));
       }
 
-      // refresh charts whenever a row changes
-      refreshTrendsRef.current?.();
+      // Avoid refetching large histories for enrichment-only UPDATEs.
+      // Deletions can affect aggregates, so refresh (debounced).
+      if (payload.eventType === 'DELETE') {
+        scheduleRefreshTrends(800);
+      } else if (payload.eventType === 'UPDATE') {
+        try {
+          const n = payload.new || {};
+          const o = payload.old || {};
+          const keys = ['royalty', 'interior_type', 'page_count', 'dimensions_raw', 'trim_size', 'archived'];
+          const changed = keys.some((k) => (o?.[k] ?? null) !== (n?.[k] ?? null));
+          if (changed) scheduleRefreshTrends(2500);
+        } catch (_) {}
+      }
     }
   );
 
   // 2) asin_history: on new point, refresh charts
   channel.on(
     'postgres_changes',
-    { event: 'INSERT', schema: 'public', table: 'asin_history' },
+    { event: 'INSERT', schema: 'public', table: 'asin_history', filter: `user_id=eq.${user.id}` },
     (payload) => {
       if (payload.new?.user_id !== user.id) return;
-      refreshTrendsRef.current?.();
+      scheduleRefreshTrends();
       try { computeReviewsRef.current?.(); } catch (_) {}
       // Show a single consolidated toast when a real history point arrives
       try {
@@ -419,7 +452,7 @@ useEffect(() => {
         const last = toastCooldownRef.current.get(asinId) || 0;
         if (now - last > 4000) {
           toastCooldownRef.current.set(asinId, now);
-          const a = trackedAsins.find(x => x.id === asinId);
+          const a = (trackedAsinsRef.current || []).find(x => x.id === asinId);
           const title = a?.title || 'ASIN';
           toast({ title: 'Dati aggiornati!', description: `I dati per ${title} sono stati aggiornati.` });
         }
@@ -430,7 +463,7 @@ useEffect(() => {
   // 3) asin_events: live toast for price/status
   channel.on(
     'postgres_changes',
-    { event: 'INSERT', schema: 'public', table: 'asin_events' },
+    { event: 'INSERT', schema: 'public', table: 'asin_events', filter: `user_id=eq.${user.id}` },
     (payload) => {
       if (payload.new?.user_id !== user.id) return;
       const ev = payload.new;
@@ -449,7 +482,7 @@ useEffect(() => {
 
   channel.on(
     'postgres_changes',
-    { event: '*', schema: 'public', table: 'kdp_top_books_month' },
+    { event: '*', schema: 'public', table: 'kdp_top_books_month', filter: `account_id=eq.${user.id}` },
     (payload) => {
       const recNew = payload.new || payload.record || null;
       const recOld = payload.old || null;
@@ -471,6 +504,10 @@ useEffect(() => {
   return () => {
     if (channelRef.current) supabase.removeChannel(channelRef.current);
     channelRef.current = null;
+    try {
+      if (refreshTrendsDebounceRef.current) clearTimeout(refreshTrendsDebounceRef.current);
+      refreshTrendsDebounceRef.current = null;
+    } catch (_) {}
   };
 }, [user?.id]);
 
@@ -527,7 +564,7 @@ useEffect(() => {
 
   const computePoolReviews14d = useCallback(async () => {
     if (!user) return setPoolReviews14d({ gained: 0, lost: 0 });
-    const items = (trackedAsins || []).filter(a => (showArchived ? a.archived === true : a.archived !== true));
+    const items = (trackedAsinsRef.current || []).filter(a => (showArchived ? a.archived === true : a.archived !== true));
     const ids = items.map(a => a.id);
     if (!ids.length) { setPoolReviews14d({ gained: 0, lost: 0 }); return; }
     const now = new Date();
@@ -598,10 +635,42 @@ useEffect(() => {
       }
     }
     setPoolReviews14d({ gained, lost });
-  }, [trackedAsins, showArchived, user]);
+  }, [showArchived, user]);
 
-  useEffect(() => { computeReviewsRef.current = computePoolReviews14d; }, [computePoolReviews14d]);
-  useEffect(() => { computePoolReviews14d(); }, [computePoolReviews14d]);
+  const poolReviewsDebounceRef = useRef(null);
+  const schedulePoolReviews14d = useCallback((delayMs = 3500) => {
+    try {
+      if (poolReviewsDebounceRef.current) clearTimeout(poolReviewsDebounceRef.current);
+      poolReviewsDebounceRef.current = setTimeout(() => {
+        poolReviewsDebounceRef.current = null;
+        computePoolReviews14d();
+      }, delayMs);
+    } catch (_) {}
+  }, [computePoolReviews14d]);
+
+  const asinIdsFingerprint = useMemo(() => {
+    const ids = (trackedAsins || [])
+      .map(a => {
+        const id = String(a?.id || '');
+        if (!id) return '';
+        return `${id}:${a?.archived === true ? '1' : '0'}`;
+      })
+      .filter(Boolean)
+      .sort();
+    return ids.join(',');
+  }, [trackedAsins]);
+
+  useEffect(() => {
+    return () => {
+      try {
+        if (poolReviewsDebounceRef.current) clearTimeout(poolReviewsDebounceRef.current);
+        poolReviewsDebounceRef.current = null;
+      } catch (_) {}
+    };
+  }, []);
+
+  useEffect(() => { computeReviewsRef.current = () => schedulePoolReviews14d(); }, [schedulePoolReviews14d]);
+  useEffect(() => { schedulePoolReviews14d(500); }, [user?.id, showArchived, asinIdsFingerprint, schedulePoolReviews14d]);
   
   const handleAddAsin = async (asin, country) => {
     setIsAdding(true);
